@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.pyright/
+.ruff_cache/
+.env
+.coverage
+htmlcov/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+.vscode/
+.idea/
+draft-preview*.json
+deploy/k8s/rendered/
+azure.*.env

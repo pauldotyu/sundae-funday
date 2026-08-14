@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: demo
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - sundae-mcp-deployment.yaml
+  - sundae-mcp-service.yaml
+  - ops-agent-deployment.yaml
+  - ops-agent-service.yaml
+  - concierge-deployment.yaml
+  - concierge-service.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: sundae-funday
+      app.kubernetes.io/managed-by: kustomize
