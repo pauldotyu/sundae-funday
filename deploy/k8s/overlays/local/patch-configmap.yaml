@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: sundae-funday
+data:
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://host.docker.internal:4318
+  APPLICATIONINSIGHTS_CONNECTION_STRING: ""
+  OPENAI_BASE_URL: http://host.docker.internal:11434/v1
+  OPENAI_CHAT_MODEL: qwen3:8b
+  OPENAI_AUTH_MODE: api_key
+  OPENAI_API_KEY: ollama

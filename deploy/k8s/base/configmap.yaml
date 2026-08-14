@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: sundae-funday
+  labels:
+    app.kubernetes.io/name: sundae-funday
+    app.kubernetes.io/component: config
+
+data:
+  APP_VERSION: "0.1.0"
+  LOG_LEVEL: INFO
+  ENABLE_INSTRUMENTATION: "true"
+  OTEL_SERVICE_NAMESPACE: sundae-funday
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://host.docker.internal:4318
+  APPLICATIONINSIGHTS_CONNECTION_STRING: ""
+  OPENAI_BASE_URL: http://host.docker.internal:11434/v1
+  OPENAI_CHAT_MODEL: qwen3:8b
+  OPENAI_AUTH_MODE: api_key
+  OPENAI_API_KEY: ollama
+  SUNDAE_MCP_URL: http://sundae-mcp:8101/mcp/
+  OPS_AGENT_URL: http://ops-agent:8202
+  OPS_AGENT_PUBLIC_BASE_URL: http://ops-agent:8202

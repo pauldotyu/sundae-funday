@@ -1,0 +1,164 @@
+services:
+  sundae-mcp:
+    profiles: ["app", "demo"]
+    image: sundae-funday/sundae-mcp:0.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: sundae-mcp
+    environment:
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENABLE_INSTRUMENTATION: ${ENABLE_INSTRUMENTATION:-true}
+      OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE:-sundae-funday}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT_DOCKER:-http://otel-collector:4318}
+      APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
+      SERVICE: sundae-mcp
+      PORT: 8101
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    healthcheck:
+      test: ["CMD", "sundae-funday-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  ops-agent:
+    profiles: ["app", "demo"]
+    image: sundae-funday/ops-agent:0.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: ops-agent
+    depends_on:
+      sundae-mcp:
+        condition: service_healthy
+    environment:
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENABLE_INSTRUMENTATION: ${ENABLE_INSTRUMENTATION:-true}
+      OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE:-sundae-funday}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT_DOCKER:-http://otel-collector:4318}
+      APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL_DOCKER:-http://host.docker.internal:11434/v1}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-qwen3:8b}
+      OPENAI_AUTH_MODE: ${OPENAI_AUTH_MODE:-api_key}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
+      OPS_AGENT_PUBLIC_BASE_URL: http://ops-agent:8202
+      SUNDAE_MCP_URL: http://sundae-mcp:8101/mcp/
+      SERVICE: ops-agent
+      PORT: 8202
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    healthcheck:
+      test: ["CMD", "sundae-funday-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    restart: unless-stopped
+
+  concierge:
+    profiles: ["app", "demo"]
+    image: sundae-funday/concierge:0.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: concierge
+    depends_on:
+      sundae-mcp:
+        condition: service_healthy
+      ops-agent:
+        condition: service_healthy
+    ports:
+      - "8301:8301"
+    environment:
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENABLE_INSTRUMENTATION: ${ENABLE_INSTRUMENTATION:-true}
+      OTEL_SERVICE_NAMESPACE: ${OTEL_SERVICE_NAMESPACE:-sundae-funday}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT_DOCKER:-http://otel-collector:4318}
+      APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL_DOCKER:-http://host.docker.internal:11434/v1}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-qwen3:8b}
+      OPENAI_AUTH_MODE: ${OPENAI_AUTH_MODE:-api_key}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
+      SUNDAE_MCP_URL: http://sundae-mcp:8101/mcp/
+      OPS_AGENT_URL: http://ops-agent:8202
+      SERVICE: concierge
+      PORT: 8301
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    healthcheck:
+      test: ["CMD", "sundae-funday-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    restart: unless-stopped
+
+  otel-collector:
+    profiles: ["observe", "demo"]
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./deploy/otel/collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4318:4318"
+      - "9464:9464"
+    restart: unless-stopped
+
+  loki:
+    profiles: ["observe", "demo"]
+    image: grafana/loki:3.2.1
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./deploy/otel/loki-config.yaml:/etc/loki/config.yaml:ro
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+
+  tempo:
+    profiles: ["observe", "demo"]
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    volumes:
+      - ./deploy/otel/tempo-config.yaml:/etc/tempo/config.yaml:ro
+    ports:
+      - "3200:3200"
+    restart: unless-stopped
+
+  prometheus:
+    profiles: ["observe", "demo"]
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./deploy/otel/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - otel-collector
+    restart: unless-stopped
+
+  grafana:
+    profiles: ["observe", "demo"]
+    image: grafana/grafana:11.2.2
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./deploy/otel/grafana/provisioning/datasources/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - loki
+      - tempo
+      - prometheus
+    restart: unless-stopped

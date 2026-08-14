@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+__pycache__
+.pytest_cache
+.pyright
+.ruff_cache
+.env
+*.pyc
+*.pyo
+*.pyd
+compose.yaml
+docs
+scripts
