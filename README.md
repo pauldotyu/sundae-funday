@@ -78,12 +78,11 @@ Build the shared image:
 make build
 ```
 
-The image version defaults to the project version in `pyproject.toml`.
-`APP_VERSION` is the only runtime version override.
+The image version defaults to the project version in `pyproject.toml`. `APP_VERSION` is the only runtime version override.
 
 ## Kubernetes
 
-Helm is the sole Kubernetes source of truth.
+Helm is used to package the app for Kubernetes.
 
 ```bash
 helm lint deploy/helm/sundae-funday
@@ -92,13 +91,36 @@ helm template sundae-funday deploy/helm/sundae-funday --namespace demo
 
 Local Kind:
 
+> [!note]
+> The `compose.yaml` runs the observability stack in containers and publishes it on the host. Kind workloads export telemetry to the OpenTelemetry Collector through the Docker host, and Grafana is available at [http://localhost:3000](http://localhost:3000).
+
 ```bash
 make kind-create
 make kind-delete
 ```
 
-The local Helm profile uses the shared image and host Ollama. Kubernetes local
-observability manifests were removed; use the Compose observability profile.
+## Local networking
+
+The `deploy/helm/values-local.yaml` sends model requests and telemetry to the Docker host at `172.17.0.1`.
+
+Find the Kind node's host gateway with:
+
+```bash
+docker inspect sundae-control-plane \
+  --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}'
+```
+
+You can override the URLs if the reported address differs:
+
+```bash
+make kind-create \
+  OPENAI_BASE_URL=http://host-address:11434/v1 \
+  OTEL_EXPORTER_OTLP_ENDPOINT=http://host-address:4318
+```
+
+The three application pods share the Kind node network. They call each other through `127.0.0.1`, reach host services through the Docker bridge, and expose the concierge at [http://localhost:8301](http://localhost:8301).
+
+The `deploy/kind-config.yaml` creates the single control-plane node and maps its NodePort `30001` to host port `8301`. See the [chart README](deploy/helm/sundae-funday/README.md#local-kind-networking) for the full network path.
 
 Azure uses `deploy/helm/values-azure.yaml` plus secure values generated from
 Terraform outputs:

@@ -2,5 +2,6 @@ apiVersion: v2
 name: sundae-funday
 description: Slim MCP and A2A sundae demo
 type: application
+icon: https://raw.githubusercontent.com/pauldotyu/sundae-funday/main/deploy/helm/sundae-funday/icon.svg
 version: 0.1.0
 appVersion: "0.1.0"
