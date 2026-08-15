@@ -122,28 +122,21 @@ The three application pods share the Kind node network. They call each other thr
 
 The `deploy/kind-config.yaml` creates the single control-plane node and maps its NodePort `30001` to host port `8301`. See the [chart README](deploy/helm/sundae-funday/README.md#local-kind-networking) for the full network path.
 
-Azure uses `deploy/helm/values-azure.yaml` plus secure values generated from
-Terraform outputs:
+## Azure deployment
+
+For Azure, see the [aks-for-agents-with-hcp-tf-stacks](https://github.com/pauldotyu/aks-for-agents-with-hcp-tf-stacks) for an example of Terraform provisioning. Using the Terraform outputs, update the `deploy/helm/values-azure.yaml` to include your deployment values.
+
+Connect to the AKS cluster:
 
 ```bash
-TF_OUTPUT_JSON=/tmp/sundae-outputs.json make azure-deploy
+az aks get-credentials --resource-group <rg> --name <aks>
 ```
 
-See [docs/azure.md](docs/azure.md).
+Install the Helm chart:
 
-## Compatibility decisions
-
-The refactor intentionally adopts these defaults:
-
-- CI builds one image. The three previous GHCR names are compatibility tags on
-  the same build.
-- Helm replaces the duplicated Kustomize base and overlays.
-- Browser behavior, accessibility, URLs, payloads, persistence, and copy are
-  preserved; pixel-identical rendering is not a requirement.
-- The unsupported Azure setup and teardown scripts are removed. Terraform owns
-  resource provisioning.
-- `GRAHAM_CRACKERS` is now an authoritative topping because the browser already
-  offered it.
-- API keys are rendered only in Kubernetes Secrets.
-- The incorrectly cased Kustomize telemetry key and duplicated local API key
-  disappear with the obsolete manifests.
+```bash
+helm upgrade --install sundae-funday deploy/helm/sundae-funday \
+  --namespace demo \
+  --create-namespace \
+  --values deploy/helm/values-azure.yaml
+```
