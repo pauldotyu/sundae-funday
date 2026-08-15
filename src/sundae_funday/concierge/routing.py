@@ -1,6 +1,5 @@
 """Concierge routing and order-plan logic."""
 
-import re
 from typing import Any
 
 from sundae_funday.catalog import (
@@ -130,8 +129,20 @@ def _extract_first(message: str, mapping: dict[str, str]) -> str | None:
 
 
 def _extract_ready_time(message: str) -> int | None:
-    match = re.search(r"(\d+)\s*(minute|min)", message)
-    return int(match.group(1)) if match else None
+    index = 0
+    while index < len(message):
+        if not message[index].isdecimal():
+            index += 1
+            continue
+        start = index
+        while index < len(message) and message[index].isdecimal():
+            index += 1
+        end = index
+        while index < len(message) and message[index].isspace():
+            index += 1
+        if message.startswith(("minute", "min"), index):
+            return int(message[start:end])
+    return None
 
 
 def is_special_request(message: str) -> bool:
