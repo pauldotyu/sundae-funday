@@ -66,7 +66,7 @@ def rendered_documents(values: str | None = None) -> dict[tuple[str, str], str]:
 def test_compose_application_contract() -> None:
     require_command("docker")
     result = subprocess.run(
-        ["docker", "compose", "--profile", "demo", "config", "--format", "json"],
+        ["docker", "compose", "config", "--format", "json"],
         cwd=ROOT,
         check=True,
         capture_output=True,

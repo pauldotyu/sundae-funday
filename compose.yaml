@@ -23,7 +23,6 @@ x-app-healthcheck: &app-healthcheck
   start_period: 25s
 
 x-app: &app
-  profiles: ["app", "demo"]
   image: sundae-funday:${IMAGE_TAG:-latest}
   build: *app-build
   extra_hosts:
@@ -68,7 +67,6 @@ services:
       PORT: 8301
 
   otel-collector:
-    profiles: ["observe", "demo"]
     image: otel/opentelemetry-collector-contrib:0.114.0
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
@@ -79,7 +77,6 @@ services:
     restart: unless-stopped
 
   loki:
-    profiles: ["observe", "demo"]
     image: grafana/loki:3.2.1
     command: ["-config.file=/etc/loki/config.yaml"]
     volumes:
@@ -89,7 +86,6 @@ services:
     restart: unless-stopped
 
   tempo:
-    profiles: ["observe", "demo"]
     image: grafana/tempo:2.6.1
     command: ["-config.file=/etc/tempo/config.yaml"]
     volumes:
@@ -99,7 +95,6 @@ services:
     restart: unless-stopped
 
   prometheus:
-    profiles: ["observe", "demo"]
     image: prom/prometheus:v2.55.1
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -113,7 +108,6 @@ services:
     restart: unless-stopped
 
   grafana:
-    profiles: ["observe", "demo"]
     image: grafana/grafana:11.2.2
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}

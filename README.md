@@ -1,13 +1,11 @@
 # Sundae Funday
 
-Sundae Funday is a compact MCP and A2A demo. A browser concierge builds sundae
-quotes, an operations agent checks fulfillment, and a deterministic MCP service
-owns catalog, inventory, drafts, and submissions.
+Sundae Funday is a compact MCP and A2A demo. A browser concierge builds sundae quotes, an operations agent checks fulfillment, and a deterministic MCP service owns catalog, inventory, drafts, and submissions.
 
 ## Architecture
 
 ```mermaid
-flowchart LR
+flowchart TD
     Browser --> Concierge
     Concierge -->|menu, quote, confirm| MCP[Sundae MCP]
     Concierge -->|A2A operations| Ops[Ops Scoop]
@@ -17,18 +15,15 @@ flowchart LR
     MCP -. telemetry .-> Observe
 ```
 
-All three services are installed from the `sundae_funday` Python package and run
-from one container image. `SERVICE` selects `sundae-mcp`, `ops-agent`, or
-`concierge` at runtime.
+All three services are installed from the `sundae_funday` Python package and run from one container image. `SERVICE` selects `sundae-mcp`, `ops-agent`, or `concierge` at runtime.
 
-| Service | Port | Responsibility |
-| --- | ---: | --- |
-| `sundae-mcp` | 8101 | Menu, availability, quotes, and order submission |
-| `ops-agent` | 8202 | Tool-grounded inventory and fulfillment decisions |
-| `concierge` | 8301 | Browser, sessions, routing, drafts, and confirmation |
+| Service      | Port | Responsibility                                       |
+| ------------ | ---: | ---------------------------------------------------- |
+| `sundae-mcp` | 8101 | Menu, availability, quotes, and order submission     |
+| `ops-agent`  | 8202 | Tool-grounded inventory and fulfillment decisions    |
+| `concierge`  | 8301 | Browser, sessions, routing, drafts, and confirmation |
 
-The MCP service exposes `list_menu`, `check_availability`, `quote_order`, and
-`submit_order`. Only the concierge confirmation action submits a draft.
+The MCP service exposes `list_menu`, `check_availability`, `quote_order`, and `submit_order`. Only the concierge confirmation action submits a draft.
 
 ## Local quick start
 
@@ -40,27 +35,26 @@ Requirements:
 ```bash
 cp .env.example .env
 ollama pull qwen3:8b
-docker compose --profile demo up -d --build --wait
+docker compose up -d --build --wait
 ```
 
-Open <http://localhost:8301>. The Linux host mapping for
-`host.docker.internal` is included in Compose.
+Open [http://localhost:8301](http://localhost:8301).
+
+> [!note]
+> The Linux host mapping for `host.docker.internal` is included in Compose.
 
 Useful prompts:
 
 - `Show me the menu.`
 - `Build me a classic sundae with vanilla and chocolate, hot fudge, and a cherry.`
-- `What are you running low on tonight?`
+- `Got any specials tonight?`
 - `Surprise me.`
 
 Stop the stack:
 
 ```bash
-docker compose --profile demo down
+docker compose down
 ```
-
-The `app`, `observe`, and `demo` profiles run the applications, observability
-stack, or both.
 
 ## Development
 
@@ -71,7 +65,8 @@ uv sync --dev
 make check
 ```
 
-`make check` validates without modifying files. Formatting is explicit:
+> [!note]
+> `make check` validates without modifying files. Formatting is explicit:
 
 ```bash
 make format

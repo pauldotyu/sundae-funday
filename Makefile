@@ -36,10 +36,10 @@ build:
 # -- Local (Docker Compose + Ollama) ----------------------------------------------
 
 up:
-	IMAGE_TAG=$(IMAGE_TAG) docker compose --profile demo up -d --build --wait
+	IMAGE_TAG=$(IMAGE_TAG) docker compose up -d --build --wait
 
 down:
-	docker compose --profile demo down
+	docker compose down
 
 # -- Azure -------------------------------------------------------------------------
 
