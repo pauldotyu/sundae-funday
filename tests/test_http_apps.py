@@ -1,12 +1,12 @@
 import httpx
 import pytest
 
-from concierge import Settings as ConciergeSettings
-from concierge import create_app as create_concierge_app
-from mcp_service import create_app as create_mcp_app
-from mcp_service import get_settings as get_mcp_settings
-from ops_agent import Settings as OpsSettings
-from ops_agent import create_agent_card
+from sundae_funday.concierge import Settings as ConciergeSettings
+from sundae_funday.concierge import create_app as create_concierge_app
+from sundae_funday.mcp_service import create_app as create_mcp_app
+from sundae_funday.mcp_service import get_settings as get_mcp_settings
+from sundae_funday.ops_agent import Settings as OpsSettings
+from sundae_funday.ops_agent import create_agent_card
 
 
 @pytest.mark.asyncio

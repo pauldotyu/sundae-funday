@@ -1,4 +1,4 @@
-"""OpenAI compatible chat client helpers."""
+"""OpenAI-compatible chat client helpers."""
 
 from collections.abc import Sequence
 from enum import StrEnum
@@ -42,26 +42,15 @@ def create_openai_chat_client(
         raise ValueError("OPENAI_BASE_URL must not be empty")
 
     validate_openai_auth(auth_mode, api_key)
-
+    common = {
+        "model": model,
+        "base_url": base_url,
+        "middleware": middleware,
+    }
     if auth_mode is OpenAIAuthMode.API_KEY:
-        return OpenAIChatClient(
-            model=model,
-            api_key=api_key,
-            base_url=base_url,
-            middleware=middleware,
-        )
+        return OpenAIChatClient(api_key=api_key, **common)
     if auth_mode is OpenAIAuthMode.DEFAULT_CREDENTIAL:
-        return OpenAIChatClient(
-            model=model,
-            credential=DefaultAzureCredential(),
-            base_url=base_url,
-            middleware=middleware,
-        )
+        return OpenAIChatClient(credential=DefaultAzureCredential(), **common)
     if auth_mode is OpenAIAuthMode.WORKLOAD_IDENTITY:
-        return OpenAIChatClient(
-            model=model,
-            credential=WorkloadIdentityCredential(),
-            base_url=base_url,
-            middleware=middleware,
-        )
+        return OpenAIChatClient(credential=WorkloadIdentityCredential(), **common)
     raise ValueError(f"Unsupported OPENAI_AUTH_MODE: {auth_mode}")

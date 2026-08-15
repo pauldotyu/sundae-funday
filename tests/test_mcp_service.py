@@ -1,4 +1,4 @@
-from mcp_service import mcp
+from sundae_funday.mcp_service import mcp
 
 
 def test_mcp_tool_names_and_schemas_are_stable() -> None:

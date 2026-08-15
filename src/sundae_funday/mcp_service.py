@@ -6,19 +6,17 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
-from shop import InMemorySundaeShop
-from telemetry import configure, create_metrics_app, instrument_asgi
+from sundae_funday.settings import AppSettings
+from sundae_funday.shop import InMemorySundaeShop
+from sundae_funday.telemetry import configure, create_metrics_app, instrument_asgi
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    app_version: str = "0.1.0"
+class Settings(AppSettings):
+    pass
 
 
 @lru_cache

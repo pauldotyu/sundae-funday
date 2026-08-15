@@ -1,10 +1,10 @@
 import json
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
-from concierge import (
+from sundae_funday.concierge import (
     INDEX_HTML,
     ConciergeRuntime,
     RoutingPlan,
@@ -475,7 +475,7 @@ async def test_model_router_retries_then_uses_heuristic_fallback() -> None:
             SimpleNamespace(messages=[]),
         ]
     )
-    runtime._router = router
+    runtime._router = cast(Any, router)
 
     plan = await runtime.plan_turn("show me the menu", "No prior conversation.")
 
@@ -501,7 +501,7 @@ async def test_model_writer_retries_empty_response_then_uses_fallback() -> None:
             SimpleNamespace(text="   "),
         ]
     )
-    runtime._writer = writer
+    runtime._writer = cast(Any, writer)
 
     reply = await runtime.write_reply("writer prompt", "deterministic fallback")
 

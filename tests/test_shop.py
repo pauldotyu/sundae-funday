@@ -1,6 +1,8 @@
+from typing import Any
+
 import pytest
 
-from shop import InMemorySundaeShop
+from sundae_funday.shop import InMemorySundaeShop
 
 
 def test_menu_preserves_catalog_order_and_response_shape() -> None:
@@ -32,6 +34,7 @@ def test_menu_preserves_catalog_order_and_response_shape() -> None:
         "CHERRY",
         "SPRINKLES",
         "OREO",
+        "GRAHAM_CRACKERS",
         "PEANUTS",
         "BANANA",
         "WHIPPED_CREAM",
@@ -248,7 +251,7 @@ def test_submit_order_enforces_draft_ownership_and_single_submission() -> None:
     ],
 )
 def test_quote_clarification_messages_are_stable(
-    arguments: dict[str, object],
+    arguments: dict[str, Any],
     expected: dict[str, object],
 ) -> None:
     result = InMemorySundaeShop().quote_order(session_id="session-1", **arguments)

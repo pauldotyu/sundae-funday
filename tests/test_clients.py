@@ -1,8 +1,13 @@
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
-from clients import extract_json_object, parse_mcp_result
+from sundae_funday.protocol import (
+    OpsAgentClient,
+    extract_json_object,
+    parse_mcp_result,
+)
 
 
 class FakeResult:
@@ -45,3 +50,21 @@ def test_extract_json_object_finds_embedded_object() -> None:
     text = 'Here you go {"status":"ready","draft_id":"d1"} thanks'
 
     assert extract_json_object(text)["draft_id"] == "d1"
+
+
+@pytest.mark.asyncio
+async def test_ops_client_injects_current_trace_headers_and_owns_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "sundae_funday.protocol.inject_trace_headers",
+        lambda: {"traceparent": "00-current-trace"},
+    )
+    client = OpsAgentClient("http://ops-agent:8202")
+    request = httpx.Request("POST", "http://ops-agent:8202")
+
+    await client._inject_trace_headers(request)
+    await client.close()
+
+    assert request.headers["traceparent"] == "00-current-trace"
+    assert client._http_client.is_closed

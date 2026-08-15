@@ -34,17 +34,19 @@ from agent_framework.a2a import A2AExecutor
 from agent_framework.exceptions import ToolException
 from mcp.types import CallToolResult
 from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
-from model_client import (
+from sundae_funday.agent_runtime import run_agent_attempts
+from sundae_funday.model_client import (
     OpenAIAuthMode,
     create_openai_chat_client,
     validate_openai_auth,
 )
-from telemetry import (
+from sundae_funday.protocol import extract_function_results, result_text
+from sundae_funday.settings import AppSettings, normalize_url
+from sundae_funday.telemetry import (
     configure,
     create_metrics_app,
     inject_trace_headers,
@@ -76,23 +78,20 @@ Never invent stock, price, ETA, or menu facts.
 
 If the user asks about ice cream prep time, flavor explanations, toppings, or
 other general customer service topics, reply directly with helpful information
-rather than calling a tool. You are not needed for those -- they belong to the
+rather than calling a tool. You are not needed for those, they belong to the
 concierge in the current conversation. Do not fail or raise errors for such
 queries; just answer naturally.
 """.strip()
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    app_version: str = "0.1.0"
+class Settings(AppSettings):
     ops_agent_public_base_url: str = "http://ops-agent:8202"
     sundae_mcp_url: str = "http://sundae-mcp:8101/mcp/"
     openai_base_url: str = ""
     openai_chat_model: str = ""
     openai_auth_mode: OpenAIAuthMode = OpenAIAuthMode.API_KEY
     openai_api_key: str | None = None
-    mcp_startup_attempts: int = 12
+    mcp_startup_attempts: int = 27
     mcp_startup_backoff_seconds: float = 1.0
 
     @field_validator("openai_base_url", "openai_chat_model")
@@ -109,7 +108,7 @@ class Settings(BaseSettings):
 
     @property
     def normalized_sundae_mcp_url(self) -> str:
-        return f"{self.sundae_mcp_url.rstrip('/')}/"
+        return normalize_url(self.sundae_mcp_url)
 
 
 @lru_cache
@@ -118,17 +117,7 @@ def get_settings() -> Settings:
 
 
 def parse_sundae_result(result: CallToolResult) -> str:
-    if result.structuredContent is not None:
-        return json.dumps(
-            result.structuredContent,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
-    for content in result.content:
-        text = getattr(content, "text", None)
-        if text:
-            return text
-    raise RuntimeError("Sundae MCP returned no result")
+    return result_text(result, sort_keys=True)
 
 
 @function_middleware
@@ -140,39 +129,28 @@ async def return_sundae_result(
     raise MiddlewareTermination(result=context.result)
 
 
-def extract_tool_results(response: AgentResponse[Any]) -> list[str]:
-    results: list[str] = []
-    for message in response.messages:
-        for content in message.contents:
-            if content.type != "function_result":
-                continue
-            result = content.result
-            if isinstance(result, str):
-                results.append(result)
-            elif result is not None:
-                results.append(json.dumps(result, separators=(",", ":")))
-    return results
-
-
 async def run_with_required_tool(
     agent: Agent,
     query: Any,
     session: AgentSession,
 ) -> list[str]:
     prompts = [
-        query,
+        str(query),
         (
             f"Original request:\n{query}\n\n"
             "Your previous response did not call a tool. Call exactly one "
             "Sundae MCP tool now and do not answer with text."
         ),
     ]
-    for prompt in prompts:
-        response = await agent.run(prompt, session=session, stream=False)
-        results = extract_tool_results(response)
-        if results:
-            return results
-    return []
+
+    async def execute(prompt: str) -> AgentResponse:
+        return await agent.run(prompt, session=session, stream=False)
+
+    def extract(response: AgentResponse) -> list[str] | None:
+        results = extract_function_results(response)
+        return results or None
+
+    return await run_agent_attempts(prompts, execute, extract) or []
 
 
 class SundaeOpsExecutor(A2AExecutor):
@@ -184,6 +162,41 @@ class SundaeOpsExecutor(A2AExecutor):
         super().__init__(agent)
         self._ops_agent = agent
         self._sundae_tools = sundae_tools
+        self._operations: dict[
+            str,
+            Callable[[dict[str, Any]], Awaitable[list[str]]],
+        ] = {
+            "inventory_special": self._inventory_special,
+            "verify_fulfillment": self._verify_fulfillment,
+        }
+
+    async def _tool_text(
+        self,
+        name: str,
+        **arguments: Any,
+    ) -> list[str]:
+        result = await self._sundae_tools.call_tool(name, **arguments)
+        if isinstance(result, str):
+            return [result]
+        return [
+            content.text
+            for content in result
+            if content.type == "text" and isinstance(content.text, str)
+        ]
+
+    async def _inventory_special(self, _: dict[str, Any]) -> list[str]:
+        return await self._tool_text("check_availability")
+
+    async def _verify_fulfillment(
+        self,
+        arguments: dict[str, Any],
+    ) -> list[str]:
+        return await self._tool_text(
+            "check_availability",
+            flavors=arguments.get("flavors"),
+            sauce=arguments.get("sauce"),
+            toppings=arguments.get("toppings"),
+        )
 
     async def _run_structured_request(self, query: Any) -> list[str] | None:
         if not isinstance(query, str) or not query.startswith("SUNDAE_OPS_REQUEST "):
@@ -198,24 +211,10 @@ class SundaeOpsExecutor(A2AExecutor):
         arguments = request.get("arguments", {})
         if not isinstance(arguments, dict):
             raise RuntimeError("Invalid structured Ops Scoop arguments")
-        if operation == "inventory_special":
-            result = await self._sundae_tools.call_tool("check_availability")
-        elif operation == "verify_fulfillment":
-            result = await self._sundae_tools.call_tool(
-                "check_availability",
-                flavors=arguments.get("flavors"),
-                sauce=arguments.get("sauce"),
-                toppings=arguments.get("toppings"),
-            )
-        else:
+        handler = self._operations.get(str(operation))
+        if handler is None:
             raise RuntimeError(f"Unsupported Ops Scoop operation: {operation}")
-        if isinstance(result, str):
-            return [result]
-        return [
-            content.text
-            for content in result
-            if content.type == "text" and isinstance(content.text, str)
-        ]
+        return await handler(arguments)
 
     async def _run(
         self,
@@ -259,7 +258,7 @@ def create_agent_card(settings: Settings | None = None) -> AgentCard:
         capabilities=AgentCapabilities(streaming=True),
         supported_interfaces=[
             AgentInterface(
-                url=f"{settings.ops_agent_public_base_url.rstrip('/')}/",
+                url=normalize_url(settings.ops_agent_public_base_url),
                 protocol_binding="JSONRPC",
             )
         ],
