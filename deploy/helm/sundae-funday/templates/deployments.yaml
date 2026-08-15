@@ -12,6 +12,10 @@ metadata:
     app.kubernetes.io/component: {{ $component.component }}
 spec:
   replicas: {{ $component.replicas }}
+  {{- if $component.hostNetwork }}
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ $component.name }}

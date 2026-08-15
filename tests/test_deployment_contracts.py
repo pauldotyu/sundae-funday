@@ -134,8 +134,12 @@ def test_helm_profile_specific_contracts() -> None:
     azure = rendered_documents("deploy/helm/values-azure.yaml")
 
     assert "nodePort: 30001" in local[("Service", "concierge")]
-    assert "hostNetwork: true" in local[("Deployment", "concierge")]
-    assert "hostNetwork: true" in local[("Deployment", "ops-agent")]
+    for name in ("sundae-mcp", "ops-agent", "concierge"):
+        assert "hostNetwork: true" in local[("Deployment", name)]
+        assert "type: Recreate" in local[("Deployment", name)]
+    local_config = local[("ConfigMap", "app-config")]
+    assert 'SUNDAE_MCP_URL: "http://127.0.0.1:8101/mcp/"' in local_config
+    assert 'OPS_AGENT_URL: "http://127.0.0.1:8202"' in local_config
     assert 'azure.workload.identity/use: "true"' in azure[("Deployment", "concierge")]
     assert 'azure.workload.identity/use: "true"' in azure[("Deployment", "ops-agent")]
     assert "serviceAccountName: demo" in azure[("Deployment", "concierge")]
