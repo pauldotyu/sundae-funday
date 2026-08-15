@@ -1,0 +1,32 @@
+image:
+  registry: ""
+  repository: sundae-funday
+  pullPolicy: IfNotPresent
+
+config:
+  ENABLE_INSTRUMENTATION: "true"
+  OTEL_SERVICE_NAMESPACE: sundae-funday
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://172.17.0.1:4318
+  OPENAI_BASE_URL: http://172.17.0.1:11434/v1
+  OPENAI_CHAT_MODEL: qwen3:8b
+  OPENAI_AUTH_MODE: api_key
+  SUNDAE_MCP_URL: http://127.0.0.1:8101/mcp/
+  OPS_AGENT_URL: http://127.0.0.1:8202
+  OPS_AGENT_PUBLIC_BASE_URL: http://127.0.0.1:8202
+
+secret:
+  data:
+    APPLICATIONINSIGHTS_CONNECTION_STRING: ""
+    OPENAI_API_KEY: ollama
+
+components:
+  sundaeMcp:
+    hostNetwork: true
+  opsAgent:
+    hostNetwork: true
+  concierge:
+    hostNetwork: true
+    service:
+      type: NodePort
+      port: 8301
+      nodePort: 30001

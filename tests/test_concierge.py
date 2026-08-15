@@ -1,8 +1,10 @@
 import json
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
-from concierge import (
+from sundae_funday.concierge import (
     INDEX_HTML,
     ConciergeRuntime,
     RoutingPlan,
@@ -10,6 +12,16 @@ from concierge import (
     display_order_number,
     heuristic_plan,
 )
+
+
+class FakeAgent:
+    def __init__(self, responses: list[Any]) -> None:
+        self.responses = responses
+        self.prompts: list[str] = []
+
+    async def run(self, prompt: str, **_: Any) -> Any:
+        self.prompts.append(prompt)
+        return self.responses.pop(0)
 
 
 @pytest.mark.asyncio
@@ -445,3 +457,55 @@ async def test_quote_requires_ops_fulfillment_approval() -> None:
 def test_display_order_number_uses_first_two_digits() -> None:
     assert display_order_number("sundae-55b8472e") == "55"
     assert display_order_number("sundae-a8b3c7") == "83"
+
+
+@pytest.mark.asyncio
+async def test_model_router_retries_then_uses_heuristic_fallback() -> None:
+    runtime = ConciergeRuntime(
+        Settings(
+            openai_base_url="",
+            openai_chat_model="",
+        ),
+        mcp_call=None,
+        ops_call=None,
+    )
+    router = FakeAgent(
+        [
+            SimpleNamespace(messages=[]),
+            SimpleNamespace(messages=[]),
+        ]
+    )
+    runtime._router = cast(Any, router)
+
+    plan = await runtime.plan_turn("show me the menu", "No prior conversation.")
+
+    assert plan.route == "menu"
+    assert len(router.prompts) == 2
+    assert "previous response did not call capture_chat_plan" in router.prompts[1]
+    await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_model_writer_retries_empty_response_then_uses_fallback() -> None:
+    runtime = ConciergeRuntime(
+        Settings(
+            openai_base_url="",
+            openai_chat_model="",
+        ),
+        mcp_call=None,
+        ops_call=None,
+    )
+    writer = FakeAgent(
+        [
+            SimpleNamespace(text=""),
+            SimpleNamespace(text="   "),
+        ]
+    )
+    runtime._writer = cast(Any, writer)
+
+    reply = await runtime.write_reply("writer prompt", "deterministic fallback")
+
+    assert reply == "deterministic fallback"
+    assert len(writer.prompts) == 2
+    assert "previous response was empty" in writer.prompts[1]
+    await runtime.close()

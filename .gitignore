@@ -13,6 +13,3 @@ htmlcov/
 .vscode/
 .idea/
 draft-preview*.json
-deploy/k8s/rendered/
-azure.*.env
-/deploy/helm/azure.values.yaml

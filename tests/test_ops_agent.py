@@ -1,7 +1,7 @@
 import pytest
 from agent_framework.exceptions import ToolException
 
-from ops_agent import connect_mcp_with_retry
+from sundae_funday.ops_agent import connect_mcp_with_retry
 
 
 class FakeMCPTool:
@@ -25,7 +25,7 @@ async def test_connect_mcp_retries_transient_startup_failure(
     async def fake_sleep(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("ops_agent.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("sundae_funday.ops_agent.asyncio.sleep", fake_sleep)
 
     await connect_mcp_with_retry(
         tool,
@@ -46,7 +46,7 @@ async def test_connect_mcp_raises_after_retry_budget(
     async def fake_sleep(_: float) -> None:
         return None
 
-    monkeypatch.setattr("ops_agent.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("sundae_funday.ops_agent.asyncio.sleep", fake_sleep)
 
     with pytest.raises(ToolException, match="MCP server is not ready"):
         await connect_mcp_with_retry(

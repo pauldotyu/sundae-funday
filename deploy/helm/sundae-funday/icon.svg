@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title>Sundae Funday</title>
+  <rect width="256" height="256" rx="48" fill="#fff4dc"/>
+  <path d="M65 113h126l-14 82a24 24 0 0 1-24 20h-50a24 24 0 0 1-24-20z" fill="#75c9c8"/>
+  <path d="M76 137h104l-7 40H83z" fill="#b9ece6"/>
+  <circle cx="95" cy="104" r="40" fill="#f4c98b"/>
+  <circle cx="133" cy="93" r="46" fill="#fffaf0"/>
+  <circle cx="166" cy="108" r="36" fill="#d99b72"/>
+  <path d="M96 87c18 11 42 13 63 4" fill="none" stroke="#6d3828" stroke-width="10" stroke-linecap="round"/>
+  <path d="M109 72c13 11 29 12 43 2" fill="none" stroke="#e14b4b" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="132" cy="48" r="14" fill="#e53935"/>
+  <path d="M133 35c3-13 12-20 25-22" fill="none" stroke="#4f8c45" stroke-width="6" stroke-linecap="round"/>
+  <path d="M111 215h34v17h-34z" fill="#5a9f9e"/>
+  <path d="M91 232h74" fill="none" stroke="#397b7a" stroke-width="12" stroke-linecap="round"/>
+</svg>

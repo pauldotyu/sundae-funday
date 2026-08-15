@@ -18,4 +18,7 @@ spec:
     - name: http
       port: {{ $component.service.port }}
       targetPort: http
+      {{- with $component.service.nodePort }}
+      nodePort: {{ . }}
+      {{- end }}
 {{- end }}
