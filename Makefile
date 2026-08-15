@@ -1,4 +1,6 @@
 UV ?= uv
+PROJECT_VERSION := $(shell python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+IMAGE_TAG ?= $(PROJECT_VERSION)
 
 # -- Development -------------------------------------------------------------------
 
@@ -7,12 +9,12 @@ UV ?= uv
 	kind-create kind-delete
 
 sync:
-	$(UV) sync --dev
+	$(UV) sync --frozen --dev
 
 lint:
 	$(UV) run ruff check .
 
-format :
+format:
 	$(UV) run ruff format .
 
 format-check:
@@ -24,17 +26,17 @@ typecheck:
 test:
 	$(UV) run pytest
 
-check: lint format format-check typecheck test
+check: lint format-check typecheck test
 
 # -- Build -------------------------------------------------------------------------
 
 build:
-	docker compose build sundae-mcp ops-agent concierge
+	IMAGE_TAG=$(IMAGE_TAG) docker compose build sundae-mcp
 
 # -- Local (Docker Compose + Ollama) ----------------------------------------------
 
 up:
-	docker compose --profile demo up -d --build --wait
+	IMAGE_TAG=$(IMAGE_TAG) docker compose --profile demo up -d --build --wait
 
 down:
 	docker compose --profile demo down
@@ -42,22 +44,22 @@ down:
 # -- Azure -------------------------------------------------------------------------
 
 azure-deploy:
-	bash scripts/azure-deploy.sh
+	$(UV) run python scripts/azure_deploy.py
 
 # -- Kubernetes on Kind ------------------------------------------------------------
 
-IMAGE_TAGS := sundae-funday/sundae-mcp:0.1.0 \
-              sundae-funday/ops-agent:0.1.0 \
-              sundae-funday/concierge:0.1.0
+IMAGE := sundae-funday:$(IMAGE_TAG)
 
 kind-create: build
-	kind create cluster --name sundae --config deploy/k8s/kind-config.yaml 2>&1 || true
+	kind create cluster --name sundae --config deploy/kind-config.yaml 2>&1 || true
 	kubectl config use-context kind-sundae
-	kind load docker-image $(IMAGE_TAGS) --name sundae
-	kubectl apply -k deploy/k8s/overlays/local
-	kubectl apply -k deploy/k8s/overlays/local
+	kind load docker-image $(IMAGE) --name sundae
+	helm upgrade --install sundae-funday deploy/helm/sundae-funday \
+		--namespace demo --create-namespace \
+		--values deploy/helm/values-local.yaml \
+		--set-string image.tag=$(IMAGE_TAG) \
+		--wait
 
 kind-delete:
-	kubectl delete -k deploy/k8s/overlays/local --ignore-not-found 2>/dev/null || true
-	kubectl delete -k deploy/k8s/overlays/local --ignore-not-found 2>/dev/null || true
+	helm uninstall sundae-funday --namespace demo --ignore-not-found 2>/dev/null || true
 	kind delete cluster --name sundae 2>/dev/null || true

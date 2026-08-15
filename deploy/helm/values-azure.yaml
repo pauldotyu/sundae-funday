@@ -1,0 +1,14 @@
+config:
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  OPENAI_BASE_URL: https://mf-example.services.ai.azure.com/openai/v1/
+  OPENAI_CHAT_MODEL: gpt-example
+  OPENAI_AUTH_MODE: workload_identity
+
+secret:
+  data:
+    APPLICATIONINSIGHTS_CONNECTION_STRING: ""
+    OPENAI_API_KEY: ""
+
+workloadIdentity:
+  enabled: true
+  clientId: 11111111-1111-1111-1111-111111111111

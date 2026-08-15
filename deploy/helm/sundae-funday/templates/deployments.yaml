@@ -35,6 +35,10 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if $component.hostNetwork }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -42,45 +46,9 @@ spec:
         fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
-      {{- if $component.waitForSundaeMcp }}
-      initContainers:
-        - name: wait-for-sundae-mcp
-          image: "{{ $root.Values.image.registry }}/{{ $root.Values.components.sundaeMcp.repository }}:{{ include "sundae-funday.version" $root }}"
-          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
-          command:
-            - python
-            - -c
-            - |
-              import time
-              import urllib.error
-              import urllib.request
-
-              url = "http://sundae-mcp:8101/healthz"
-              for attempt in range(60):
-                  try:
-                      with urllib.request.urlopen(url, timeout=2) as response:
-                          if response.status == 200:
-                              raise SystemExit(0)
-                  except (TimeoutError, urllib.error.URLError):
-                      if attempt == 59:
-                          raise
-                      time.sleep(2)
-          resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
-            limits:
-              cpu: 100m
-              memory: 64Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-            readOnlyRootFilesystem: true
-      {{- end }}
       containers:
         - name: {{ $component.name }}
-          image: "{{ $root.Values.image.registry }}/{{ $component.repository }}:{{ include "sundae-funday.version" $root }}"
+          image: {{ include "sundae-funday.image" $root | quote }}
           imagePullPolicy: {{ $root.Values.image.pullPolicy }}
           envFrom:
             - configMapRef:

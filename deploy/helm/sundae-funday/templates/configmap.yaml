@@ -9,9 +9,6 @@ metadata:
     app.kubernetes.io/component: config
 data:
   APP_VERSION: {{ include "sundae-funday.version" . | quote }}
-  FOUNDRY_WORKLOAD_IDENTITY_CLIENT_ID: {{ default (index .Values.config "FOUNDRY_WORKLOAD_IDENTITY_CLIENT_ID") .Values.workloadIdentity.clientId | quote }}
   {{- range $name, $value := .Values.config }}
-  {{- if ne $name "FOUNDRY_WORKLOAD_IDENTITY_CLIENT_ID" }}
   {{ $name }}: {{ $value | quote }}
-  {{- end }}
   {{- end }}

@@ -1,141 +1,112 @@
-# Azure AKS deployment path
+# Azure AKS deployment
 
-This repo keeps the app images and manifests the same between local Docker Compose and AKS. The switch for observability is environment driven:
-
-- If `APPLICATIONINSIGHTS_CONNECTION_STRING` is empty, the apps use standard OTLP exporters.
-- If `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, the apps send traces, metrics, and logs to Azure Monitor exporters.
+Azure resources are provisioned separately with Terraform. This repository
+renders and installs the application Helm chart.
 
 ## Prerequisites
 
-- Azure resources provisioned with the required Terraform outputs below
 - Azure CLI authenticated to the target tenant
-- `kubectl`, `kustomize`, Terraform, Python 3, and Git
-- Three public GHCR images published for the selected commit tag, or equivalent
-  Kubernetes image pull credentials for private packages
+- Terraform outputs from the infrastructure deployment
+- `helm`, `kubectl`, Python 3.12, uv, and Git
+- The selected shared image published to GHCR
 
-## What the scripts do
+CI publishes:
 
-The Azure overlay deploys commit-tagged images from GitHub Container Registry.
-The CI workflow publishes all three images after a push using the seven-character
-Git commit as the tag.
-
-`scripts/azure-deploy.sh` reads Terraform outputs, renders the sensitive
-Application Insights connection string into a Kubernetes Secret, configures
-Microsoft Foundry workload identity, applies the manifests, waits for rollouts,
-and prints the concierge endpoint.
-
-The Azure overlay reads:
-
-- `deploy/k8s/overlays/azure/azure.config.env`
-- `deploy/k8s/overlays/azure/azure.secret.env`
-
-Copy the tracked example files when configuring the overlay manually:
-
-```bash
-cp deploy/k8s/overlays/azure/azure.config.env.example \
-  deploy/k8s/overlays/azure/azure.config.env
-cp deploy/k8s/overlays/azure/azure.secret.env.example \
-  deploy/k8s/overlays/azure/azure.secret.env
+```text
+ghcr.io/<owner>/sundae-funday:<project-version>-<short-commit>
 ```
 
-The examples use recognizable dummy GUIDs and `*-example` resource names while
-preserving the expected Azure value formats. Replace every dummy value before
-rendering. The runtime files match the root `azure.*.env` ignore rule, while the
-`.example` files are committed. You can then run:
-
-```bash
-kustomize build deploy/k8s/overlays/azure
-```
-
-The deployment script regenerates both files from Terraform outputs before
-building the overlay.
+The former service-specific image names are aliases for the same image digest.
 
 ## Required Terraform outputs
 
-The renderer consumes these outputs:
+The deployer reads the Terraform JSON once and consumes:
 
 - `aks_cluster_ids`
 - `aks_cluster_names`
 - `application_insights_connection_strings`
-- `application_insights_resource_ids`
-- `azure_monitor_workspace_ids`
-- `foundry_account_ids`
 - `foundry_model_deployment_names`
 - `foundry_openai_base_urls`
 - `foundry_workload_identity_client_ids`
 - `foundry_workload_identity_ids`
-- `foundry_workload_identity_principal_ids`
-- `log_analytics_workspace_ids`
-- `otel_logs_endpoints`
-- `otel_metrics_endpoints`
 
-The Azure ConfigMap also records the non-secret resource IDs supplied by the
-Terraform deployment for diagnostics.
+Outputs may be direct values or maps keyed by Azure location. Set
+`AZURE_LOCATION_KEY` when a map contains multiple regions.
 
-The federated identity must trust this service account subject:
+Unused Azure resource IDs and direct OTLP endpoint values are no longer copied
+into the application ConfigMap.
 
-```bash
-system:serviceaccount:demo:demo
+## Workload identity
+
+The managed identity must have a federated credential for:
+
+```text
+issuer:   the AKS OIDC issuer
+subject:  system:serviceaccount:<namespace>:<service-account>
+audience: api://AzureADTokenExchange
 ```
 
-It must use the AKS OIDC issuer and the
-`api://AzureADTokenExchange` audience. The deployment script verifies this
-federation before applying the manifests.
+Defaults are namespace `demo` and service account `demo`. The deployer validates
+the federation before installation.
 
-## Render and deploy
-
-```bash
-terraform -chdir=/path/to/terraform output -json > /tmp/sundae-outputs.json
-TF_OUTPUT_JSON=/tmp/sundae-outputs.json bash scripts/azure-deploy.sh
-```
-
-You can also let the script invoke Terraform:
-
-```bash
-TERRAFORM_DIR=/path/to/terraform bash scripts/azure-deploy.sh
-```
-
-`IMAGE_TAG` defaults to the current seven-character Git commit. Override it only
-when deploying a different published GHCR tag. Set `AZURE_LOCATION_KEY` when the
-Terraform outputs contain more than one region. Forks should set `GHCR_OWNER` to
-the GitHub account that owns their published packages.
-
-Push the commit and wait for the `container-build` CI jobs to publish all three
-images before deploying:
-
-```bash
-git push
-TF_OUTPUT_JSON=/tmp/sundae-outputs.json \
-GHCR_OWNER=your-github-user \
-bash scripts/azure-deploy.sh
-```
-
-To render without connecting to AKS:
+## Render only
 
 ```bash
 TF_OUTPUT_JSON=/tmp/sundae-outputs.json \
 RENDER_ONLY=true \
 RENDERED_MANIFEST_PATH=/tmp/sundae-azure.yaml \
-bash scripts/azure-deploy.sh
+uv run python scripts/azure_deploy.py
 ```
 
-The rendered file contains the sensitive Application Insights connection string.
-Keep it outside the repository and delete it after use.
+The generated values and intermediate manifest live in a mode `0700` temporary
+directory. A requested output manifest is mode `0600` because it contains the
+Application Insights connection string.
 
-## Useful checks
+The image tag defaults to `<project-version>-<short-commit>`, derived from
+`pyproject.toml` and Git. Override `IMAGE_TAG` only when deploying another
+published tag. Forks should set `GHCR_OWNER`.
+
+## Deploy
+
+From an output file:
 
 ```bash
-kubectl get pods -n demo
-kubectl get svc -n demo
+TF_OUTPUT_JSON=/tmp/sundae-outputs.json \
+GHCR_OWNER=your-github-user \
+make azure-deploy
+```
+
+Or let the deployer invoke Terraform:
+
+```bash
+TERRAFORM_DIR=/path/to/terraform make azure-deploy
+```
+
+The deployer:
+
+1. renders `deploy/helm/values-azure.yaml` with secure generated overrides;
+2. validates AKS workload identity federation;
+3. runs `helm upgrade --install --wait`;
+4. waits for all three Deployments;
+5. prints the shared image and concierge LoadBalancer endpoint.
+
+Environment overrides:
+
+| Variable | Default |
+| --- | --- |
+| `AZURE_LOCATION_KEY` | `West US 3` |
+| `GHCR_OWNER` | `pauldotyu` |
+| `K8S_NAMESPACE` | `demo` |
+| `WORKLOAD_IDENTITY_SERVICE_ACCOUNT` | `demo` |
+| `HELM_RELEASE` | `sundae-funday` |
+
+## Checks
+
+```bash
+helm lint deploy/helm/sundae-funday \
+  --values deploy/helm/values-azure.yaml
+kubectl get pods,services -n demo
 kubectl logs deployment/concierge -n demo
 kubectl logs deployment/ops-agent -n demo
 kubectl logs deployment/sundae-mcp -n demo
 ```
-
-## Notes
-
-- The Application Insights connection string and optional model API key are
-  stored in `azure-secrets`, not a ConfigMap.
-- Concierge and Ops Scoop use the `demo` service account in the `demo` namespace.
-- Pod annotations expose `/metrics` for managed Prometheus scraping.
-- The apps do not need a database or message broker, so AKS setup stays small.

@@ -2,6 +2,14 @@
 {{- default .Chart.AppVersion .Values.image.tag -}}
 {{- end -}}
 
+{{- define "sundae-funday.image" -}}
+{{- $name := .Values.image.repository -}}
+{{- if .Values.image.registry -}}
+{{- $name = printf "%s/%s" .Values.image.registry $name -}}
+{{- end -}}
+{{- printf "%s:%s" $name (include "sundae-funday.version" .) -}}
+{{- end -}}
+
 {{- define "sundae-funday.labels" -}}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 app.kubernetes.io/part-of: sundae-funday
