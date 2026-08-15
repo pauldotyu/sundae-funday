@@ -63,9 +63,6 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository_owner }}/sundae-funday
-            ghcr.io/${{ github.repository_owner }}/sundae-funday-sundae-mcp
-            ghcr.io/${{ github.repository_owner }}/sundae-funday-ops-agent
-            ghcr.io/${{ github.repository_owner }}/sundae-funday-concierge
           tags: |
             type=raw,value=${{ needs.version.outputs.value }}
       - uses: docker/build-push-action@v6
