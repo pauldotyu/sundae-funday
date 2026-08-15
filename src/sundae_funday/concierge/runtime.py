@@ -427,7 +427,7 @@ class ConciergeRuntime:
                 fallback = (
                     "That one is a bit outside my wheelhouse. "
                     "Your sundae is ready. "
-                    "Please press Confirm when you would like to proceed!"
+                    "Please confirm when you would like to proceed!"
                 )
                 authoritative = {"capabilities": ["menu", "quote"]}
             else:
