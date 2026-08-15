@@ -9,6 +9,7 @@ Sundae Funday is a small, end-to-end demo of a customer-facing AI concierge that
 | `src/`         | Application code: concierge, sundae-mcp, and ops-agent services                                                              |
 | `tests/`       | Unit tests for deterministic shop logic, protocol helpers, and routing                                                       |
 | `deploy/k8s/`  | Kustomize base manifests and per-environment overlays (local, azure)                                                         |
+| `deploy/helm/` | Helm chart for Terraform or direct Helm deployments                                                                          |
 | `deploy/otel/` | Docker Compose configs for the local observability stack (Collector, Grafana, Loki, Tempo, Prometheus)                       |
 | `scripts/`     | Azure resource provisioning and deployment helpers                                                                           |
 | `compose.yaml` | Single Compose file with profiles for the app (`app`), the full demo (`demo`), and the observability stack alone (`observe`) |
@@ -39,9 +40,7 @@ This separation keeps shop behavior deterministic while still allowing agents to
 1. The browser sends a message to the `concierge`.
 2. The concierge classifies the request as a menu question, an order draft, an operational question, or a general chat message.
 3. Menu and order-draft requests use `sundae-mcp` for authoritative shop data.
-4. Operational questions and every fulfillment decision go to `ops-agent` over
-   A2A. The specialist calls the appropriate MCP tool before returning its
-   answer.
+4. Operational questions and every fulfillment decision go to `ops-agent` over A2A. The specialist calls the appropriate MCP tool before returning its answer.
 5. A valid quote is stored as a pending draft in the concierge session.
 6. The order is submitted through `sundae-mcp` only after the customer selects **Confirm and submit order**.
 
@@ -131,14 +130,11 @@ All three application services use a shared OpenTelemetry module that instrument
 The base Kustomize manifests under `deploy/k8s/base` define the namespace, Deployments, and Services for the three application containers. They are not tied to any specific cloud:
 
 - **Kind / minikube / k3d**: use `overlays/local` for host-based Ollama and OTLP endpoints.
-- **AKS**: use `scripts/azure-deploy.sh` to generate the ignored Azure env files
-  from Terraform outputs, render `overlays/azure`, and deploy it.
+- **AKS**: use `scripts/azure-deploy.sh` to generate the ignored Azure env files from Terraform outputs, render `overlays/azure`, and deploy it.
 
 ## Azure deployment
 
-Azure resources are expected to be provisioned separately with Terraform. The
-deployment path requires `az`, `kubectl`, `kustomize`, Terraform output JSON,
-and an active Azure CLI login.
+Azure resources are expected to be provisioned separately with Terraform. The deployment path requires `az`, `kubectl`, `kustomize`, Terraform output JSON, and an active Azure CLI login.
 
 ```bash
 az login
@@ -146,13 +142,11 @@ terraform -chdir=/path/to/terraform output -json > /tmp/sundae-outputs.json
 TF_OUTPUT_JSON=/tmp/sundae-outputs.json bash scripts/azure-deploy.sh
 ```
 
-GitHub Actions publishes commit-tagged images to GHCR after each push. The
-deployment script generates the ignored `azure.config.env` and
-`azure.secret.env` files, verifies workload identity federation, renders the
-Azure overlay, applies it to AKS, waits for rollouts, and prints the endpoint.
+GitHub Actions publishes commit-tagged images to GHCR after each push. The deployment script generates the ignored `azure.config.env` and `azure.secret.env` files, verifies workload identity federation, renders the Azure overlay, applies it to AKS, waits for rollouts, and prints the endpoint.
 
-See [`docs/azure.md`](docs/azure.md) for required Terraform outputs, workload
-identity requirements, fork-specific GHCR configuration, and rendering options.
+The same workflow publishes the Helm chart as an OCI artifact at `oci://ghcr.io/pauldotyu/charts/sundae-funday`. Image tags, the chart version, and `Chart.appVersion` all use `0.0.0-<short-commit>`, allowing Terraform to install a chart whose default images match that exact commit.
+
+See [`docs/azure.md`](docs/azure.md) for required Terraform outputs, workload identity requirements, fork-specific GHCR configuration, and rendering options.
 
 ## Development
 

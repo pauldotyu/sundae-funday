@@ -1,0 +1,109 @@
+image:
+  registry: ghcr.io/pauldotyu
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+configMap:
+  name: app-config
+
+config:
+  LOG_LEVEL: INFO
+  ENABLE_INSTRUMENTATION: "true"
+  OTEL_SERVICE_NAMESPACE: demo
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ""
+  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ""
+  OPENAI_BASE_URL: ""
+  OPENAI_CHAT_MODEL: gpt-5.4-mini
+  OPENAI_AUTH_MODE: workload_identity
+  SUNDAE_MCP_URL: http://sundae-mcp:8101/mcp/
+  OPS_AGENT_URL: http://ops-agent:8202
+  OPS_AGENT_PUBLIC_BASE_URL: http://ops-agent:8202
+  AZURE_SUBSCRIPTION_ID: ""
+  AZURE_RESOURCE_GROUP: ""
+  AZURE_LOCATION: ""
+  AKS_CLUSTER_ID: ""
+  AKS_CLUSTER_NAME: ""
+  APPLICATIONINSIGHTS_RESOURCE_ID: ""
+  AZURE_MONITOR_WORKSPACE_ID: ""
+  FOUNDRY_ACCOUNT_ID: ""
+  FOUNDRY_WORKLOAD_IDENTITY_ID: ""
+  FOUNDRY_WORKLOAD_IDENTITY_CLIENT_ID: ""
+  FOUNDRY_WORKLOAD_IDENTITY_PRINCIPAL_ID: ""
+  LOG_ANALYTICS_WORKSPACE_ID: ""
+
+secret:
+  create: true
+  name: app-secrets
+  existingSecret: ""
+  data:
+    APPLICATIONINSIGHTS_CONNECTION_STRING: ""
+    OPENAI_API_KEY: ""
+
+workloadIdentity:
+  enabled: false
+  clientId: ""
+  serviceAccount:
+    create: true
+    name: demo
+
+components:
+  sundaeMcp:
+    name: sundae-mcp
+    component: mcp
+    repository: sundae-funday-sundae-mcp
+    replicas: 1
+    port: 8101
+    service:
+      type: ClusterIP
+      port: 8101
+    startupFailureThreshold: 12
+    workloadIdentity: false
+    waitForSundaeMcp: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+  opsAgent:
+    name: ops-agent
+    component: a2a
+    repository: sundae-funday-ops-agent
+    replicas: 1
+    port: 8202
+    service:
+      type: ClusterIP
+      port: 8202
+    startupFailureThreshold: 18
+    workloadIdentity: true
+    waitForSundaeMcp: true
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 768Mi
+  concierge:
+    name: concierge
+    component: web
+    repository: sundae-funday-concierge
+    replicas: 1
+    port: 8301
+    service:
+      type: LoadBalancer
+      port: 80
+    startupFailureThreshold: 18
+    workloadIdentity: true
+    waitForSundaeMcp: false
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 768Mi

@@ -11,6 +11,15 @@ permissions:
   packages: write
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: echo "value=0.1.0-$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
   checks:
     runs-on: ubuntu-latest
     steps:
@@ -22,8 +31,12 @@ jobs:
         with:
           enable-cache: true
       - run: make check
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/helm/sundae-funday
+      - run: helm template sundae-funday deploy/helm/sundae-funday --namespace demo
 
   container-build:
+    needs: [checks, version]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -42,8 +55,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/sundae-funday-${{ matrix.service }}
           tags: |
-            type=semver,pattern={{version}}
-            type=sha,format=short,prefix=
+            type=raw,value=${{ needs.version.outputs.value }}
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -53,3 +65,28 @@ jobs:
           labels: ${{ steps.metadata.outputs.labels }}
           build-args: |
             SERVICE=${{ matrix.service }}
+
+  helm-publish:
+    if: github.event_name == 'push'
+    needs: [checks, version, container-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" |
+            helm registry login ghcr.io \
+              --username "${{ github.actor }}" \
+              --password-stdin
+      - name: Package chart
+        run: |
+          helm package deploy/helm/sundae-funday \
+            --destination dist \
+            --version "${{ needs.version.outputs.value }}" \
+            --app-version "${{ needs.version.outputs.value }}"
+      - name: Push chart
+        run: |
+          helm push \
+            "dist/sundae-funday-${{ needs.version.outputs.value }}.tgz" \
+            "oci://ghcr.io/${{ github.repository_owner }}/charts"

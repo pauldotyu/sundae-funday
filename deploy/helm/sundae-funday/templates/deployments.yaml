@@ -1,0 +1,127 @@
+{{- $root := . -}}
+{{- range $key, $component := .Values.components }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $component.name }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "sundae-funday.labels" $root | nindent 4 }}
+    app.kubernetes.io/name: {{ $component.name }}
+    app.kubernetes.io/component: {{ $component.component }}
+spec:
+  replicas: {{ $component.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $component.name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $component.name }}
+        app.kubernetes.io/component: {{ $component.component }}
+        {{- if and $root.Values.workloadIdentity.enabled $component.workloadIdentity }}
+        azure.workload.identity/use: "true"
+        {{- end }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: {{ $component.port | quote }}
+    spec:
+      {{- if and $root.Values.workloadIdentity.enabled $component.workloadIdentity }}
+      serviceAccountName: {{ include "sundae-funday.serviceAccountName" $root }}
+      {{- end }}
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if $component.waitForSundaeMcp }}
+      initContainers:
+        - name: wait-for-sundae-mcp
+          image: "{{ $root.Values.image.registry }}/{{ $root.Values.components.sundaeMcp.repository }}:{{ include "sundae-funday.version" $root }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          command:
+            - python
+            - -c
+            - |
+              import time
+              import urllib.error
+              import urllib.request
+
+              url = "http://sundae-mcp:8101/healthz"
+              for attempt in range(60):
+                  try:
+                      with urllib.request.urlopen(url, timeout=2) as response:
+                          if response.status == 200:
+                              raise SystemExit(0)
+                  except (TimeoutError, urllib.error.URLError):
+                      if attempt == 59:
+                          raise
+                      time.sleep(2)
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+      {{- end }}
+      containers:
+        - name: {{ $component.name }}
+          image: "{{ $root.Values.image.registry }}/{{ $component.repository }}:{{ include "sundae-funday.version" $root }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ $root.Values.configMap.name }}
+            - secretRef:
+                name: {{ include "sundae-funday.secretName" $root }}
+          env:
+            - name: SERVICE
+              value: {{ $component.name }}
+            - name: PORT
+              value: {{ $component.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ $component.port }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: {{ $component.startupFailureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          resources:
+            {{- toYaml $component.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

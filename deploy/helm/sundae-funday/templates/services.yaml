@@ -1,0 +1,21 @@
+{{- $root := . -}}
+{{- range $key, $component := .Values.components }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $component.name }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "sundae-funday.labels" $root | nindent 4 }}
+    app.kubernetes.io/name: {{ $component.name }}
+    app.kubernetes.io/component: {{ $component.component }}
+spec:
+  type: {{ $component.service.type }}
+  selector:
+    app.kubernetes.io/name: {{ $component.name }}
+  ports:
+    - name: http
+      port: {{ $component.service.port }}
+      targetPort: http
+{{- end }}

@@ -1,0 +1,31 @@
+image:
+  tag: 0.0.0-abcdef0
+
+config:
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: https://example-dce.westus3-1.ingest.monitor.azure.com/dataCollectionRules/dcr-00000000000000000000000000000000/streams/Microsoft-OTLP-Logs/otlp/v1/logs
+  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: https://example-dce.westus3-1.metrics.ingest.monitor.azure.com/dataCollectionRules/dcr-00000000000000000000000000000000/streams/Microsoft-OtelMetrics/otlp/v1/metrics
+  OPENAI_BASE_URL: https://mf-example.services.ai.azure.com/openai/v1/
+  OPENAI_CHAT_MODEL: gpt-example
+  OPENAI_AUTH_MODE: workload_identity
+  AZURE_SUBSCRIPTION_ID: 00000000-0000-0000-0000-000000000000
+  AZURE_RESOURCE_GROUP: rg-example
+  AZURE_LOCATION: westus3
+  AKS_CLUSTER_ID: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example/providers/Microsoft.ContainerService/managedClusters/aks-example
+  AKS_CLUSTER_NAME: aks-example
+  APPLICATIONINSIGHTS_RESOURCE_ID: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example/providers/Microsoft.Insights/components/otel-example
+  AZURE_MONITOR_WORKSPACE_ID: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example/providers/Microsoft.Monitor/accounts/metrics-example
+  FOUNDRY_ACCOUNT_ID: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example/providers/Microsoft.CognitiveServices/accounts/mf-example
+  FOUNDRY_WORKLOAD_IDENTITY_ID: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example/providers/Microsoft.ManagedIdentity/userAssignedIdentities/mi-example
+  FOUNDRY_WORKLOAD_IDENTITY_CLIENT_ID: 11111111-1111-1111-1111-111111111111
+  FOUNDRY_WORKLOAD_IDENTITY_PRINCIPAL_ID: 22222222-2222-2222-2222-222222222222
+  LOG_ANALYTICS_WORKSPACE_ID: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example/providers/Microsoft.OperationalInsights/workspaces/logs-example
+
+secret:
+  data:
+    APPLICATIONINSIGHTS_CONNECTION_STRING: "InstrumentationKey=00000000-0000-0000-0000-000000000000;IngestionEndpoint=https://westus3-1.in.applicationinsights.azure.com/;LiveEndpoint=https://westus3.livediagnostics.monitor.azure.com/"
+    OPENAI_API_KEY: ""
+
+workloadIdentity:
+  enabled: true
+  clientId: 11111111-1111-1111-1111-111111111111
