@@ -93,11 +93,12 @@ def create_app() -> Any:
     configure("sundae-mcp")
 
     async def health(_: Any) -> JSONResponse:
+        tools = await mcp.list_tools()
         return JSONResponse(
             {
                 "status": "ok",
                 "version": settings.app_version,
-                "tools": 4,
+                "tools": len(tools),
             }
         )
 
