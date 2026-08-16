@@ -18,7 +18,7 @@
 - `ops_agent.py` exposes an A2A operations specialist. It must ground operational answers in Sundae MCP tools and must never submit orders. Structured internal requests use the `SUNDAE_OPS_REQUEST ` prefix to bypass model ambiguity for inventory specials and fulfillment verification.
 - The concierge is split by responsibility: `concierge/app.py` exposes HTTP, `routing.py` performs deterministic extraction and plan merging, `runtime.py` orchestrates MCP/A2A/model calls and session state, `state.py` stores conversation and pending drafts, and `presentation.py` renders deterministic fallback responses.
 - Concierge routing and writing may use a model, but the application remains usable without one. Empty model settings disable both agents; invalid or empty model output retries once and then falls back to heuristic routing or deterministic rendering.
-- The order lifecycle is intentionally two phase: `quote_order` creates a draft, Ops Scoop verifies fulfillment, and only `/api/confirm` calls `submit_order`. Quoting must not decrement inventory.
+- The order lifecycle is intentionally two phase: `quote_order` creates a draft, Scooper verifies fulfillment, and only `/api/confirm` calls `submit_order`. Quoting must not decrement inventory.
 - Compose and Helm deploy the same image three times with different `SERVICE` and `PORT` values. Compose also runs the local observability stack. The local Helm profile uses host networking and loopback service URLs; the default and Azure profiles use normal Kubernetes networking.
 - `telemetry.py` owns the shared OpenTelemetry setup, and every service exposes `/healthz` and `/metrics`. Preserve the tracing behavior described below when changing service boundaries or clients.
 

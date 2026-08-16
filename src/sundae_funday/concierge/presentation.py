@@ -27,7 +27,7 @@ def render_fulfillment_failure(result: dict[str, Any]) -> str:
         if isinstance(item, dict) and item.get("available") is False
     ]
     detail = f" Unavailable right now: {', '.join(unavailable)}." if unavailable else ""
-    return f"Ops Scoop cannot fulfill that sundae as requested.{detail}"
+    return f"Oops! Scoops cannot be fulfilled as requested.{detail}"
 
 
 def display_order_number(order_id: Any) -> str:

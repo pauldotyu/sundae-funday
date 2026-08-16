@@ -8,7 +8,7 @@ Sundae Funday is a compact MCP and A2A demo. A browser concierge builds sundae q
 flowchart TD
     Browser --> Concierge
     Concierge -->|menu, quote, confirm| MCP[Sundae MCP]
-    Concierge -->|A2A operations| Ops[Ops Scoop]
+    Concierge -->|A2A operations| Ops[Scooper]
     Ops -->|grounded tools| MCP
     Concierge -. telemetry .-> Observe[OTel or Azure Monitor]
     Ops -. telemetry .-> Observe

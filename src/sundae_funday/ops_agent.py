@@ -62,7 +62,7 @@ class ConnectableMCPTool(Protocol):
 
 
 OPS_INSTRUCTIONS = """
-You are Ops Scoop, the Sundae Funday operations specialist.
+You are Scooper, the Sundae Funday operations specialist.
 Call a Sundae MCP tool before every answer. Use the narrowest tool that fits.
 Use list_menu for sizes, prices, flavors, sauces, and toppings.
 Use check_availability for stock, shortages, and what can be made now.
@@ -204,16 +204,16 @@ class SundaeOpsExecutor(A2AExecutor):
         try:
             request = json.loads(query.removeprefix("SUNDAE_OPS_REQUEST "))
         except json.JSONDecodeError as error:
-            raise RuntimeError("Invalid structured Ops Scoop request") from error
+            raise RuntimeError("Invalid structured Scooper request") from error
         if not isinstance(request, dict):
-            raise RuntimeError("Invalid structured Ops Scoop request")
+            raise RuntimeError("Invalid structured Scooper request")
         operation = request.get("operation")
         arguments = request.get("arguments", {})
         if not isinstance(arguments, dict):
-            raise RuntimeError("Invalid structured Ops Scoop arguments")
+            raise RuntimeError("Invalid structured Scooper arguments")
         handler = self._operations.get(str(operation))
         if handler is None:
-            raise RuntimeError(f"Unsupported Ops Scoop operation: {operation}")
+            raise RuntimeError(f"Unsupported Scooper operation: {operation}")
         return await handler(arguments)
 
     async def _run(
@@ -226,7 +226,7 @@ class SundaeOpsExecutor(A2AExecutor):
         if results is None:
             results = await run_with_required_tool(self._ops_agent, query, session)
         if not results:
-            raise RuntimeError("Ops Scoop completed without a Sundae MCP result")
+            raise RuntimeError("Scooper completed without a Sundae MCP result")
         await updater.update_status(
             state=TaskState.TASK_STATE_WORKING,
             message=updater.new_agent_message(parts=[Part(text="\n".join(results))]),
@@ -250,7 +250,7 @@ def create_agent_card(settings: Settings | None = None) -> AgentCard:
         ],
     )
     return AgentCard(
-        name="Ops Scoop",
+        name="Scooper",
         description="Model driven operations specialist grounded in Sundae MCP.",
         version=settings.app_version,
         default_input_modes=["text"],

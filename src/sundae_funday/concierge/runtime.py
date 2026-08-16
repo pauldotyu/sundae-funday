@@ -62,7 +62,7 @@ RouterCall = Callable[[str, dict[str, Any]], Awaitable[Any]]
 OpsCall = Callable[[str, str], Awaitable[str]]
 
 ROUTER_INSTRUCTIONS = """
-You route chat turns for a slim sundae shop concierge demo.
+You route chat turns for a sundae shop concierge service.
 Call capture_chat_plan exactly once.
 Choose route="menu" for menu, flavors, toppings, sizes, or price questions.
 Choose route="quote" for building, pricing, or revising a sundae. Extract
@@ -77,7 +77,7 @@ flavor explanations, toppings, flavors, or menu items. These belong in the curre
 conversation. For general capability questions or greetings, use route="general".
 Never choose operations for complaints, exclamations, or confusion about timing
 or readiness. These are customer service messages for the current conversation.
-Do not claim an order is submitted or confirmed.
+Do not claim an order is submitted or confirmed when it has not been submitted.
 """.strip()
 
 WRITER_INSTRUCTIONS = """
@@ -86,8 +86,8 @@ plan, and authoritative tool results.
 Never invent menu, price, stock, ETA, or order facts.
 For specials, recommend a complete sundae using the highest-inventory flavor,
 sauce, and toppings from the authoritative inventory result.
-If a sundae is ready, tell the customer it is ready and ask them to use Confirm.
-Use plain punctuation and do not use em dashes.
+If a sundae is ready, tell the customer it is ready and ask them to confirm by
+clicking the button on the page.
 """.strip()
 
 
@@ -317,7 +317,7 @@ class ConciergeRuntime:
         verification = unwrap_tool_result(extract_json_object(response_text))
         if not isinstance(verification.get("can_make_now"), bool):
             raise RuntimeError(
-                "Ops Scoop did not return a structured fulfillment decision"
+                "Scooper did not return a structured fulfillment decision"
             )
         return verification
 

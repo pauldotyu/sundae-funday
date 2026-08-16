@@ -450,8 +450,8 @@ async def test_quote_requires_ops_fulfillment_approval() -> None:
     )
 
     assert response.needs_confirmation is False
-    assert "Ops Scoop cannot fulfill" in response.reply
-    assert "Banana" in response.reply
+    assert "Oops! Scoops cannot be fulfilled as requested." in response.reply
+    assert "Unavailable right now: Banana." in response.reply
 
 
 def test_display_order_number_uses_first_two_digits() -> None:

@@ -79,7 +79,7 @@ def test_ops_agent_card_contract() -> None:
         )
     )
 
-    assert card.name == "Ops Scoop"
+    assert card.name == "Scooper"
     assert card.version == "3.2.1"
     assert card.supported_interfaces[0].url == "https://ops.example.test/base/"
     assert card.supported_interfaces[0].protocol_binding == "JSONRPC"
