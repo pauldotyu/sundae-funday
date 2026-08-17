@@ -29,7 +29,8 @@ jobs:
               exit 1
             fi
           else
-            version="${base}-$(git rev-parse --short=7 HEAD)"
+            short_sha="$(git rev-parse --short=7 HEAD)"
+            version="${base}-${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}.g${short_sha}"
           fi
           echo "value=${version}" >> "$GITHUB_OUTPUT"
 
@@ -101,11 +102,24 @@ jobs:
               --username "${{ github.actor }}" \
               --password-stdin
       - name: Package chart
+        env:
+          FULL_VERSION: ${{ needs.version.outputs.value }}
         run: |
           helm package deploy/helm/sundae-funday \
             --destination dist \
-            --version "${{ needs.version.outputs.value }}" \
-            --app-version "${{ needs.version.outputs.value }}"
+            --version "${FULL_VERSION}" \
+            --app-version "${FULL_VERSION}"
+      - name: Verify packaged chart version
+        env:
+          FULL_VERSION: ${{ needs.version.outputs.value }}
+        run: |
+          chart="dist/sundae-funday-${FULL_VERSION}.tgz"
+          helm show chart "${chart}" | grep -Fxq "version: ${FULL_VERSION}"
+          helm show chart "${chart}" | grep -Fxq "appVersion: ${FULL_VERSION}"
+          test "$(
+            helm template sundae-funday "${chart}" --namespace demo |
+              grep -Fc "image: \"ghcr.io/pauldotyu/sundae-funday:${FULL_VERSION}\""
+          )" -eq 3
       - name: Push chart
         run: |
           helm push \
