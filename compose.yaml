@@ -46,6 +46,8 @@ services:
     environment:
       <<: [*app-environment, *model-environment]
       OPS_AGENT_PUBLIC_BASE_URL: http://ops-agent:8202
+      OPS_DEMO_WORK_SECONDS: ${OPS_DEMO_WORK_SECONDS:-0}
+      OPS_DEMO_CONCURRENCY: ${OPS_DEMO_CONCURRENCY:-2}
       SUNDAE_MCP_URL: http://sundae-mcp:8101/mcp/
       SERVICE: ops-agent
       PORT: 8202

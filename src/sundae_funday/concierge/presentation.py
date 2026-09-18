@@ -13,9 +13,14 @@ def compact_json(value: Any) -> str:
 
 def render_special_reply(result: dict[str, Any]) -> str:
     plan = special_order_plan(result)
+    flavors = (
+        f"two scoops of {plan.flavors[0]}"
+        if plan.flavors[0] == plan.flavors[1]
+        else f"a scoop each of {' and '.join(plan.flavors)}"
+    )
     return (
         "Today's special is a Classic Sundae with "
-        f"two scoops of {plan.flavors[0]}, {plan.sauce}, "
+        f"{flavors}, {plan.sauce}, "
         f"{plan.toppings[0]}, and {plan.toppings[1]}. "
     )
 
@@ -28,6 +33,32 @@ def render_fulfillment_failure(result: dict[str, Any]) -> str:
     ]
     detail = f" Unavailable right now: {', '.join(unavailable)}." if unavailable else ""
     return f"Oops! Scoops cannot be fulfilled as requested.{detail}"
+
+
+def render_operations_reply(result: dict[str, Any]) -> str:
+    if isinstance(result.get("can_make_now"), bool):
+        low_stock = result.get("low_stock")
+        if not isinstance(low_stock, list) or any(
+            not isinstance(item, dict)
+            or not isinstance(item.get("name"), str)
+            or not isinstance(item.get("remaining"), int)
+            for item in low_stock
+        ):
+            raise RuntimeError("Scooper returned invalid inventory data")
+        stock = ", ".join(
+            f"{item['name']} ({item['remaining']} left)" for item in low_stock
+        )
+        availability = (
+            "The requested items are available."
+            if result["can_make_now"]
+            else render_fulfillment_failure(result)
+        )
+        return availability + (f" Low stock: {stock}." if stock else " No low stock.")
+    if result.get("shop_name") == "Sundae Funday":
+        return render_menu_reply(result)
+    if result.get("status") in ("ready", "needs_clarification", "unavailable"):
+        return render_quote_reply(result)
+    raise RuntimeError("Scooper returned an unsupported operations result")
 
 
 def display_order_number(order_id: Any) -> str:
@@ -70,7 +101,7 @@ def render_quote_reply(result: dict[str, Any]) -> str:
     quote = result.get("quote")
     order = result.get("order")
     if not isinstance(quote, dict) or not isinstance(order, dict):
-        return "Your sundae is ready. Use Confirm if it looks right."
+        raise RuntimeError("The sundae quote is missing order or pricing details")
     flavors = ", ".join(item["name"] for item in order.get("flavors", []))
     sauce = order.get("sauce")
     sauce_text = f" with {sauce['name']}" if isinstance(sauce, dict) else ""

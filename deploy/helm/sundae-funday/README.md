@@ -50,6 +50,11 @@ Use `secret.existingSecret` with `secret.create: false` to supply an existing
 Secret. Non-secret runtime values belong under `config`; API keys and connection
 strings belong under `secret.data`.
 
+The optional scaling demo uses `config.OPS_DEMO_WORK_SECONDS` (default `"0"`,
+disabled) and `config.OPS_DEMO_CONCURRENCY` (default `"2"`). Scale only
+`components.opsAgent.replicas`; concierge and MCP retain process-local state.
+See the [scaling walkthrough](../../../README.md#aks-scaling-demo).
+
 For AKS, set `workloadIdentity.enabled`, `workloadIdentity.clientId`, and the
 service account values. `scripts/azure_deploy.py` derives these from Terraform
 and installs the chart securely.

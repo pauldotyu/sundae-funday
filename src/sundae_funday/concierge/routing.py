@@ -64,8 +64,12 @@ ORDER_KEYWORDS = {
 
 def heuristic_plan(message: str) -> RoutingPlan:
     lower = message.lower().strip()
-    if is_special_request(lower):
-        return RoutingPlan(route="operations", operations_question=message)
+    if any(phrase in lower for phrase in SPECIAL_PHRASES):
+        return RoutingPlan(
+            route="operations",
+            operations_intent="specials",
+            operations_question=message,
+        )
     if any(phrase in lower for phrase in SURPRISE_PHRASES):
         return RoutingPlan(route="surprise")
     size = next((value for key, value in SIZE_HINTS.items() if key in lower), None)
@@ -145,11 +149,6 @@ def _extract_ready_time(message: str) -> int | None:
     return None
 
 
-def is_special_request(message: str) -> bool:
-    lower = message.lower()
-    return any(phrase in lower for phrase in SPECIAL_PHRASES)
-
-
 def unwrap_tool_result(result: dict[str, Any]) -> dict[str, Any]:
     nested = result.get("result")
     return nested if isinstance(nested, dict) else result
@@ -170,7 +169,10 @@ def top_inventory_items(
             for item in items
             if isinstance(item, dict)
             and item.get("available") is True
-            and isinstance(item.get("remaining"), int)
+            and isinstance(item.get("name"), str)
+            and item["name"].strip()
+            and type(item.get("remaining")) is int
+            and item["remaining"] > 0
         ),
         key=lambda item: int(item["remaining"]),
         reverse=True,
@@ -188,11 +190,15 @@ def top_inventory_items(
 
 def special_order_plan(result: dict[str, Any]) -> RoutingPlan:
     inventory = unwrap_tool_result(result)
-    flavor = top_inventory_items(
+    flavors = top_inventory_items(
         inventory,
         CatalogCategory.FLAVORS,
         count=1,
-    )[0]
+    )
+    if flavors[0]["remaining"] >= 2:
+        flavors = flavors * 2
+    else:
+        flavors = top_inventory_items(inventory, CatalogCategory.FLAVORS, count=2)
     sauce = top_inventory_items(
         inventory,
         CatalogCategory.SAUCES,
@@ -203,11 +209,10 @@ def special_order_plan(result: dict[str, Any]) -> RoutingPlan:
         CatalogCategory.TOPPINGS,
         count=2,
     )
-    flavor_name = str(flavor["name"])
     return RoutingPlan(
         route="quote",
         size="CLASSIC",
-        flavors=[flavor_name, flavor_name],
+        flavors=[str(flavor["name"]) for flavor in flavors],
         sauce=str(sauce["name"]),
         toppings=[str(item["name"]) for item in toppings],
     )

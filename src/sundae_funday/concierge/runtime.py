@@ -1,29 +1,14 @@
 """Concierge routing and runtime orchestration."""
 
-import json
-import random
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
-from agent_framework import (
-    Agent,
-    AgentResponse,
-    FunctionInvocationContext,
-    MiddlewareTermination,
-    function_middleware,
-    tool,
-)
+from agent_framework import Agent, AgentResponse
 
-from sundae_funday.agent_runtime import run_agent_attempts
-from sundae_funday.catalog import (
-    SIZES,
-    SURPRISE_FLAVOR_SKUS,
-    SURPRISE_SAUCE_SKUS,
-    SURPRISE_SIZE_SKUS,
-    SURPRISE_TOPPING_SKUS,
-)
+from sundae_funday.agent_runtime import run_agent_attempts, run_structured
 from sundae_funday.concierge.api import (
     ChatResponse,
     ConfirmResponse,
@@ -32,18 +17,17 @@ from sundae_funday.concierge.api import (
 )
 from sundae_funday.concierge.presentation import (
     build_writer_prompt,
-    compact_json,
     display_order_number,
     ops_request,
     render_fulfillment_failure,
     render_general_reply,
     render_menu_reply,
+    render_operations_reply,
     render_quote_reply,
     render_special_reply,
 )
 from sundae_funday.concierge.routing import (
     heuristic_plan,
-    is_special_request,
     merge_order_plan,
     special_order_plan,
     unwrap_tool_result,
@@ -53,31 +37,25 @@ from sundae_funday.concierge.state import (
     SessionState,
     SessionStore,
     conversation_context,
-    extract_tool_observations,
 )
 from sundae_funday.model_client import create_openai_chat_client
 from sundae_funday.protocol import OpsAgentClient, call_mcp_tool, extract_json_object
 
 RouterCall = Callable[[str, dict[str, Any]], Awaitable[Any]]
 OpsCall = Callable[[str, str], Awaitable[str]]
+logger = logging.getLogger(__name__)
 
 ROUTER_INSTRUCTIONS = """
-You route chat turns for a sundae shop concierge service.
-Call capture_chat_plan exactly once.
-Choose route="menu" for menu, flavors, toppings, sizes, or price questions.
-Choose route="quote" for building, pricing, or revising a sundae. Extract
-size, flavors, sauce, toppings, and requested_ready_in_minutes when available.
-Choose route="operations" only for inventory checks (low stock, running low) or
-availability checks that require external tool data you cannot answer directly.
-Choose route="operations" for specials, promotions, or recommendations based on
-what the shop has the most inventory available to sell.
-For "surprise me", "pick whatever", "choose for me", use route="surprise".
-Do not choose operations for customer service questions about ice cream prep time,
-flavor explanations, toppings, flavors, or menu items. These belong in the current
-conversation. For general capability questions or greetings, use route="general".
-Never choose operations for complaints, exclamations, or confusion about timing
-or readiness. These are customer service messages for the current conversation.
-Do not claim an order is submitted or confirmed when it has not been submitted.
+Return a routing plan for the current customer message using conversation context.
+menu: menu choices, sizes, or prices.
+quote: build, price, accept, or revise a sundae; extract its ingredients and timing.
+operations: stock or availability questions, with operations_intent="availability".
+For specials or inventory-based recommendations, use operations with
+operations_intent="specials". Include the question in operations_question.
+surprise: "surprise me", "pick whatever", or "choose for me".
+general: greetings, capabilities, complaints, or explanations of preparation time.
+Use operations_intent="availability" for non-operations routes.
+Never interpret a chat message as permission to submit an order.
 """.strip()
 
 WRITER_INSTRUCTIONS = """
@@ -97,15 +75,6 @@ class TurnResult:
     authoritative: Any
     fallback: str
     use_writer: bool = True
-
-
-@function_middleware
-async def return_tool_result(
-    context: FunctionInvocationContext,
-    call_next: Callable[[], Awaitable[None]],
-) -> None:
-    await call_next()
-    raise MiddlewareTermination(result=context.result)
 
 
 class ConciergeRuntime:
@@ -171,92 +140,34 @@ class ConciergeRuntime:
         )
 
     def create_router(self, client: Any | None = None) -> Agent:
-        @tool(schema=RoutingPlan)
-        async def capture_chat_plan(
-            route: Literal["menu", "quote", "operations", "surprise", "general"],
-            size: str | None = None,
-            flavors: list[str] | None = None,
-            sauce: str | None = None,
-            toppings: list[str] | None = None,
-            requested_ready_in_minutes: int | None = None,
-            operations_question: str | None = None,
-        ) -> str:
-            return compact_json(
-                {
-                    "route": route,
-                    "size": size,
-                    "flavors": flavors or [],
-                    "sauce": sauce,
-                    "toppings": toppings or [],
-                    "requested_ready_in_minutes": requested_ready_in_minutes,
-                    "operations_question": operations_question,
-                }
-            )
-
         model_client = client or create_openai_chat_client(
             model=self.settings.openai_chat_model,
             base_url=self.settings.openai_base_url,
             auth_mode=self.settings.openai_auth_mode,
             api_key=self.settings.openai_api_key,
-            middleware=[return_tool_result],
         )
         return Agent(
             client=model_client,
             name="ConciergeRouter",
             instructions=ROUTER_INSTRUCTIONS,
-            tools=[capture_chat_plan],
             default_options={
                 "temperature": 0,
                 "max_tokens": 500,
-                "tool_choice": "required",
             },
         )
 
     async def plan_turn(self, message: str, context: str) -> RoutingPlan:
-        if is_special_request(message):
-            return RoutingPlan(route="operations", operations_question=message)
         router = self._router
         if router is None:
             return heuristic_plan(message)
         prompt = (
             f"Conversation context:\n{context}\n\nCurrent customer message:\n{message}"
         )
-        prompts = [
-            prompt,
-            (
-                f"{prompt}\n\n"
-                "Your previous response did not call capture_chat_plan. Call it "
-                "exactly once now and do not answer with text."
-            ),
-        ]
-
-        async def execute(current_prompt: str) -> AgentResponse:
-            return await router.run(current_prompt)
-
-        def extract(response: AgentResponse) -> RoutingPlan | None:
-            captured = [
-                observation
-                for observation in extract_tool_observations(response)
-                if observation.name == "capture_chat_plan"
-            ]
-            if len(captured) != 1:
-                return None
-            arguments = captured[0].arguments
-            if isinstance(arguments, str):
-                try:
-                    arguments = json.loads(arguments)
-                except json.JSONDecodeError:
-                    return None
-            if not isinstance(arguments, dict):
-                return None
-            try:
-                return RoutingPlan.model_validate(arguments)
-            except ValueError:
-                return None
-
-        return await run_agent_attempts(prompts, execute, extract) or heuristic_plan(
-            message
-        )
+        plan = await run_structured(router, prompt, RoutingPlan)
+        if plan is not None:
+            return plan
+        logger.warning("Router validation exhausted; using heuristic routing")
+        return heuristic_plan(message)
 
     async def write_reply(
         self,
@@ -398,7 +309,7 @@ class ConciergeRuntime:
         state: SessionState,
         plan: RoutingPlan,
     ) -> TurnResult:
-        special_request = is_special_request(message)
+        special_request = plan.operations_intent == "specials"
         response_text = await self._ops_call(
             session_id,
             (
@@ -407,32 +318,12 @@ class ConciergeRuntime:
                 else plan.operations_question or message
             ),
         )
-        try:
-            authoritative = extract_json_object(response_text)
-            fallback = (
-                render_special_reply(authoritative)
-                if special_request
-                else render_quote_reply(authoritative)
-            )
-        except RuntimeError:
-            low = response_text.lower()
-            is_failure = any(
-                keyword in low
-                for keyword in ("unable to", "cannot ", "failed to", "unavailable")
-            ) or (
-                "sorry" in low
-                and any(keyword in low for keyword in ("agent", "ops", "error"))
-            )
-            if is_failure:
-                fallback = (
-                    "That one is a bit outside my wheelhouse. "
-                    "Your sundae is ready. "
-                    "Please confirm when you would like to proceed!"
-                )
-                authoritative = {"capabilities": ["menu", "quote"]}
-            else:
-                authoritative = {"text": response_text}
-                fallback = response_text
+        authoritative = unwrap_tool_result(extract_json_object(response_text))
+        fallback = (
+            render_special_reply(authoritative)
+            if special_request
+            else render_operations_reply(authoritative)
+        )
         if special_request:
             state.order_plan = special_order_plan(authoritative)
         return TurnResult(
@@ -449,19 +340,12 @@ class ConciergeRuntime:
         state: SessionState,
         plan: RoutingPlan,
     ) -> TurnResult:
-        selected_size = random.choice(SURPRISE_SIZE_SKUS)
-        scoop_count = SIZES[selected_size].included_scoops
-        selected = RoutingPlan(
-            route="quote",
-            size=selected_size,
-            flavors=random.sample(SURPRISE_FLAVOR_SKUS, scoop_count),
-            sauce=random.choice(SURPRISE_SAUCE_SKUS),
-            toppings=random.sample(SURPRISE_TOPPING_SKUS, 2),
-        )
+        inventory = await self._ops_call(session_id, ops_request("inventory_special"))
+        selected = special_order_plan(extract_json_object(inventory))
         result = await self._quote(session_id, selected)
         fallback = await self._finalize_quote(session_id, state, result)
         state.order_plan = selected
-        return TurnResult(plan, result, fallback)
+        return TurnResult(plan, result, fallback, use_writer=False)
 
     async def _handle_general(
         self,

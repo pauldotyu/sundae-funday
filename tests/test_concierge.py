@@ -12,6 +12,7 @@ from sundae_funday.concierge import (
     display_order_number,
     heuristic_plan,
 )
+from sundae_funday.shop import InMemorySundaeShop
 
 
 class FakeAgent:
@@ -95,7 +96,12 @@ async def test_concierge_operations_route_uses_ops_agent() -> None:
     async def fake_ops(session_id: str, question: str) -> str:
         assert session_id == "session-1"
         assert "running low" in question
-        return "Mint chip is low, but vanilla and chocolate are fine."
+        return json.dumps(
+            {
+                "can_make_now": True,
+                "low_stock": [{"name": "Mint chip", "remaining": 2}],
+            }
+        )
 
     settings = Settings(openai_base_url="", openai_chat_model="")
     runtime = ConciergeRuntime(settings, mcp_call=fake_mcp, ops_call=fake_ops)
@@ -104,6 +110,34 @@ async def test_concierge_operations_route_uses_ops_agent() -> None:
 
     assert response.source == "operations"
     assert "Mint chip" in response.reply
+    assert "2 left" in response.reply
+    assert "ready" not in response.reply
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Sorry, the ops agent is unavailable.",
+        "Your sundae is ready.",
+        "{}",
+        '{"status":"error","message":"MCP unavailable"}',
+        '{"status":"ready"}',
+        '{"can_make_now":true,"low_stock":"invalid"}',
+    ],
+)
+async def test_operations_reject_invalid_results_instead_of_claiming_ready(
+    reply: str,
+) -> None:
+    async def fake_ops(session_id: str, question: str) -> str:
+        return reply
+
+    runtime = ConciergeRuntime(
+        Settings(openai_base_url="", openai_chat_model=""),
+        ops_call=fake_ops,
+    )
+    with pytest.raises(RuntimeError):
+        await runtime.chat("invalid-result", "What are you running low on tonight?")
 
 
 def test_heuristic_plan_extracts_quote_details() -> None:
@@ -205,6 +239,8 @@ async def test_concierge_surprise_me_generates_sundae() -> None:
 
     async def fake_ops(session_id: str, question: str) -> str:
         assert session_id == "session-surprise"
+        if '"operation":"inventory_special"' in question:
+            return json.dumps(InMemorySundaeShop().check_availability())
         assert '"operation":"verify_fulfillment"' in question
         return json.dumps({"can_make_now": True, "requested_items": []})
 
@@ -218,6 +254,8 @@ async def test_concierge_surprise_me_generates_sundae() -> None:
 
     assert response.needs_confirmation is True
     assert calls[0][0] == "quote_order"
+    assert calls[0][1]["size"] == "CLASSIC"
+    assert calls[0][1]["flavors"] == ["Vanilla Bean", "Vanilla Bean"]
 
 
 def test_heuristic_plan_surprise_message() -> None:
@@ -229,6 +267,7 @@ def test_heuristic_plan_routes_specials_to_operations() -> None:
     plan = heuristic_plan("Got any specials today?")
 
     assert plan.route == "operations"
+    assert plan.operations_intent == "specials"
     assert plan.operations_question == "Got any specials today?"
 
 
@@ -471,8 +510,8 @@ async def test_model_router_retries_then_uses_heuristic_fallback() -> None:
     )
     router = FakeAgent(
         [
-            SimpleNamespace(messages=[]),
-            SimpleNamespace(messages=[]),
+            SimpleNamespace(text='{"route":"invalid"}'),
+            SimpleNamespace(text=""),
         ]
     )
     runtime._router = cast(Any, router)
@@ -481,7 +520,8 @@ async def test_model_router_retries_then_uses_heuristic_fallback() -> None:
 
     assert plan.route == "menu"
     assert len(router.prompts) == 2
-    assert "previous response did not call capture_chat_plan" in router.prompts[1]
+    assert "Validation errors:" in router.prompts[1]
+    assert "literal_error" in router.prompts[1]
     await runtime.close()
 
 

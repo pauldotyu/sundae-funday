@@ -91,6 +91,8 @@ def test_compose_application_contract() -> None:
             "sundae-funday-healthcheck",
         ]
         assert service["restart"] == "unless-stopped"
+    assert str(services["ops-agent"]["environment"]["OPS_DEMO_WORK_SECONDS"]) == "0"
+    assert str(services["ops-agent"]["environment"]["OPS_DEMO_CONCURRENCY"]) == "2"
 
 
 @pytest.mark.parametrize(
@@ -106,6 +108,9 @@ def test_compose_application_contract() -> None:
 )
 def test_helm_workload_contract(values: str | None, image: str) -> None:
     documents = rendered_documents(values)
+    config = documents[("ConfigMap", "app-config")]
+    assert 'OPS_DEMO_WORK_SECONDS: "0"' in config
+    assert 'OPS_DEMO_CONCURRENCY: "2"' in config
     expected = {
         "sundae-mcp": (8101, "cpu: 100m", "memory: 128Mi"),
         "ops-agent": (8202, "cpu: 200m", "memory: 256Mi"),

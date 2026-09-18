@@ -2,7 +2,7 @@
 
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from sundae_funday.model_client import (
     OpenAIAuthMode,
@@ -61,7 +61,10 @@ class ConfirmResponse(BaseModel):
 
 
 class RoutingPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
     route: Literal["menu", "quote", "operations", "surprise", "general"]
+    operations_intent: Literal["specials", "availability"] = "availability"
     size: str | None = None
     flavors: list[str] = Field(default_factory=list)
     sauce: str | None = None
@@ -69,11 +72,8 @@ class RoutingPlan(BaseModel):
     requested_ready_in_minutes: int | None = Field(default=None, ge=1)
     operations_question: str | None = None
 
-    @field_validator("flavors", "toppings", mode="before")
-    @classmethod
-    def normalize_list(cls, value: Any) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            return [value]
-        return [str(item) for item in value]
+    @model_validator(mode="after")
+    def validate_operations_intent(self) -> Self:
+        if self.operations_intent == "specials" and self.route != "operations":
+            raise ValueError("specials requires route=operations")
+        return self
