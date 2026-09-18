@@ -1,10 +1,8 @@
 """OpenAI-compatible chat client helpers."""
 
-from collections.abc import Sequence
 from enum import StrEnum
 
-from agent_framework import ChatAndFunctionMiddlewareTypes
-from agent_framework.openai import OpenAIChatClient
+from agent_framework.openai import OpenAIChatCompletionClient
 from azure.identity import DefaultAzureCredential, WorkloadIdentityCredential
 
 
@@ -32,8 +30,7 @@ def create_openai_chat_client(
     base_url: str,
     auth_mode: OpenAIAuthMode,
     api_key: str | None = None,
-    middleware: Sequence[ChatAndFunctionMiddlewareTypes] | None = None,
-) -> OpenAIChatClient:
+) -> OpenAIChatCompletionClient:
     model = model.strip()
     base_url = base_url.strip()
     if not model:
@@ -42,15 +39,16 @@ def create_openai_chat_client(
         raise ValueError("OPENAI_BASE_URL must not be empty")
 
     validate_openai_auth(auth_mode, api_key)
-    common = {
-        "model": model,
-        "base_url": base_url,
-        "middleware": middleware,
-    }
     if auth_mode is OpenAIAuthMode.API_KEY:
-        return OpenAIChatClient(api_key=api_key, **common)
+        return OpenAIChatCompletionClient(
+            model=model, base_url=base_url, api_key=api_key
+        )
     if auth_mode is OpenAIAuthMode.DEFAULT_CREDENTIAL:
-        return OpenAIChatClient(credential=DefaultAzureCredential(), **common)
+        return OpenAIChatCompletionClient(
+            model=model, base_url=base_url, credential=DefaultAzureCredential()
+        )
     if auth_mode is OpenAIAuthMode.WORKLOAD_IDENTITY:
-        return OpenAIChatClient(credential=WorkloadIdentityCredential(), **common)
+        return OpenAIChatCompletionClient(
+            model=model, base_url=base_url, credential=WorkloadIdentityCredential()
+        )
     raise ValueError(f"Unsupported OPENAI_AUTH_MODE: {auth_mode}")

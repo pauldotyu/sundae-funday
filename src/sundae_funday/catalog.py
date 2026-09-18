@@ -95,13 +95,6 @@ ALIASES: Mapping[str, str] = MappingProxyType(
     }
 )
 
-SURPRISE_SIZE_SKUS = tuple(
-    sku for sku, size in SIZES.items() if size.included_scoops <= 2
-)
-SURPRISE_FLAVOR_SKUS = tuple(FLAVORS)
-SURPRISE_SAUCE_SKUS = tuple(SAUCES)
-SURPRISE_TOPPING_SKUS = tuple(TOPPINGS)
-
 
 def normalize_token(value: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "_", value.strip().upper()).strip("_")

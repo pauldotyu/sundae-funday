@@ -4,9 +4,11 @@ import asyncio
 import contextlib
 import json
 import logging
+import socket
+import time
 from collections.abc import Awaitable, Callable
 from functools import lru_cache
-from typing import Any, Protocol, Self
+from typing import Any, Literal, Protocol, Self
 
 import httpx
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -23,28 +25,25 @@ from a2a.types import (
 )
 from agent_framework import (
     Agent,
-    AgentResponse,
     AgentSession,
-    FunctionInvocationContext,
     MCPStreamableHTTPTool,
-    MiddlewareTermination,
-    function_middleware,
 )
 from agent_framework.a2a import A2AExecutor
 from agent_framework.exceptions import ToolException
 from mcp.types import CallToolResult
-from pydantic import field_validator, model_validator
+from opentelemetry import trace
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
-from sundae_funday.agent_runtime import run_agent_attempts
+from sundae_funday.agent_runtime import run_structured
 from sundae_funday.model_client import (
     OpenAIAuthMode,
     create_openai_chat_client,
     validate_openai_auth,
 )
-from sundae_funday.protocol import extract_function_results, result_text
+from sundae_funday.protocol import result_text
 from sundae_funday.settings import AppSettings, normalize_url
 from sundae_funday.telemetry import (
     configure,
@@ -55,6 +54,7 @@ from sundae_funday.telemetry import (
 )
 
 logger = logging.getLogger("ops-agent")
+tracer = trace.get_tracer("sundae-funday.ops")
 
 
 class ConnectableMCPTool(Protocol):
@@ -62,26 +62,25 @@ class ConnectableMCPTool(Protocol):
 
 
 OPS_INSTRUCTIONS = """
-You are Scooper, the Sundae Funday operations specialist.
-Call a Sundae MCP tool before every answer. Use the narrowest tool that fits.
-Use list_menu for sizes, prices, flavors, sauces, and toppings.
-Use check_availability for stock, shortages, and what can be made now.
-For fulfillment verification, call check_availability with the exact requested
-flavors, sauce, and toppings. Do not use quote_order for a fulfillment check.
-For specials, call check_availability without filters so the concierge can use
-the highest-inventory flavor, sauce, and toppings.
-Use quote_order for hypothetical builds, pricing, and ETA questions. When you
-need quote_order, pass session_id="ops-agent" and include requested_ready_in_minutes
-when the customer gave a time target.
-Never call submit_order. Only the concierge confirm action can submit an order.
-Never invent stock, price, ETA, or menu facts.
-
-If the user asks about ice cream prep time, flavor explanations, toppings, or
-other general customer service topics, reply directly with helpful information
-rather than calling a tool. You are not needed for those, they belong to the
-concierge in the current conversation. Do not fail or raise errors for such
-queries; just answer naturally.
+Return one MCP tool plan for the customer's operations question.
+list_menu: menu choices, sizes, or prices.
+check_availability: stock, shortages, specials, or fulfillment checks.
+Use exact requested ingredients for fulfillment; no filters for overall inventory.
+quote_order: a hypothetical build, price, or ETA; extract ingredients and timing.
+Choose a plan only. The application executes it and returns authoritative data.
+Order submission is not an available operation.
 """.strip()
+
+
+class OperationsPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    tool: Literal["list_menu", "check_availability", "quote_order"]
+    size: str = "CLASSIC"
+    flavors: list[str] = Field(default_factory=list)
+    sauce: str | None = None
+    toppings: list[str] = Field(default_factory=list)
+    requested_ready_in_minutes: int | None = Field(default=None, ge=1)
 
 
 class Settings(AppSettings):
@@ -93,6 +92,8 @@ class Settings(AppSettings):
     openai_api_key: str | None = None
     mcp_startup_attempts: int = 27
     mcp_startup_backoff_seconds: float = 1.0
+    ops_demo_work_seconds: float = Field(default=0, ge=0, le=10)
+    ops_demo_concurrency: int = Field(default=2, ge=1, le=64)
 
     @field_validator("openai_base_url", "openai_chat_model")
     @classmethod
@@ -117,40 +118,9 @@ def get_settings() -> Settings:
 
 
 def parse_sundae_result(result: CallToolResult) -> str:
+    if result.isError:
+        raise RuntimeError("Sundae MCP tool failed")
     return result_text(result, sort_keys=True)
-
-
-@function_middleware
-async def return_sundae_result(
-    context: FunctionInvocationContext,
-    call_next: Callable[[], Awaitable[None]],
-) -> None:
-    await call_next()
-    raise MiddlewareTermination(result=context.result)
-
-
-async def run_with_required_tool(
-    agent: Agent,
-    query: Any,
-    session: AgentSession,
-) -> list[str]:
-    prompts = [
-        str(query),
-        (
-            f"Original request:\n{query}\n\n"
-            "Your previous response did not call a tool. Call exactly one "
-            "Sundae MCP tool now and do not answer with text."
-        ),
-    ]
-
-    async def execute(prompt: str) -> AgentResponse:
-        return await agent.run(prompt, session=session, stream=False)
-
-    def extract(response: AgentResponse) -> list[str] | None:
-        results = extract_function_results(response)
-        return results or None
-
-    return await run_agent_attempts(prompts, execute, extract) or []
 
 
 class SundaeOpsExecutor(A2AExecutor):
@@ -158,10 +128,18 @@ class SundaeOpsExecutor(A2AExecutor):
         self,
         agent: Agent,
         sundae_tools: MCPStreamableHTTPTool,
+        settings: Settings,
     ) -> None:
         super().__init__(agent)
         self._ops_agent = agent
         self._sundae_tools = sundae_tools
+        self._work_seconds = settings.ops_demo_work_seconds
+        self._capacity = (
+            asyncio.Semaphore(settings.ops_demo_concurrency)
+            if self._work_seconds
+            else contextlib.nullcontext()
+        )
+        self._pod = socket.gethostname()
         self._operations: dict[
             str,
             Callable[[dict[str, Any]], Awaitable[list[str]]],
@@ -216,21 +194,72 @@ class SundaeOpsExecutor(A2AExecutor):
             raise RuntimeError(f"Unsupported Scooper operation: {operation}")
         return await handler(arguments)
 
+    async def _run_model_request(self, query: Any) -> list[str]:
+        plan = await run_structured(self._ops_agent, str(query), OperationsPlan)
+        if plan is None:
+            raise RuntimeError("Scooper did not return a valid operations plan")
+        arguments = plan.model_dump(exclude={"tool"})
+        if plan.tool == "list_menu":
+            arguments = {}
+        elif plan.tool == "check_availability":
+            arguments.pop("size")
+            arguments.pop("requested_ready_in_minutes")
+        else:
+            arguments["session_id"] = "ops-agent"
+        return await self._tool_text(plan.tool, **arguments)
+
     async def _run(
         self,
         query: Any,
         session: AgentSession,
         updater: TaskUpdater,
     ) -> None:
-        results = await self._run_structured_request(query)
-        if results is None:
-            results = await run_with_required_tool(self._ops_agent, query, session)
-        if not results:
-            raise RuntimeError("Scooper completed without a Sundae MCP result")
-        await updater.update_status(
-            state=TaskState.TASK_STATE_WORKING,
-            message=updater.new_agent_message(parts=[Part(text="\n".join(results))]),
-        )
+        with tracer.start_as_current_span("ops.request") as span:
+            span.set_attribute("gen_ai.operation.name", "invoke_agent")
+            span.set_attribute("gen_ai.agent.name", "Scooper")
+            queued = time.perf_counter()
+            started: float | None = None
+            outcome = "error"
+            try:
+                async with self._capacity:
+                    started = time.perf_counter()
+                    if self._work_seconds:
+                        await asyncio.sleep(self._work_seconds)
+                    results = await self._run_structured_request(query)
+                    if results is None:
+                        results = await self._run_model_request(query)
+                    if not results:
+                        raise RuntimeError(
+                            "Scooper completed without a Sundae MCP result"
+                        )
+                    await updater.update_status(
+                        state=TaskState.TASK_STATE_WORKING,
+                        message=updater.new_agent_message(
+                            parts=[Part(text="\n".join(results))]
+                        ),
+                    )
+                    outcome = "ok"
+            finally:
+                finished = time.perf_counter()
+                queue_ms = (
+                    (started if started is not None else finished) - queued
+                ) * 1000
+                processing_ms = (
+                    (finished - started) * 1000 if started is not None else 0
+                )
+                span.set_attribute("ops.queue_wait_ms", queue_ms)
+                span.set_attribute("ops.processing_ms", processing_ms)
+                span.set_attribute("ops.demo_work_seconds", self._work_seconds)
+                logger.log(
+                    logging.INFO if outcome == "ok" else logging.ERROR,
+                    "operation=scooper pod=%s trace_id=%032x "
+                    "queue_wait_ms=%.1f processing_ms=%.1f outcome=%s",
+                    self._pod,
+                    span.get_span_context().trace_id,
+                    queue_ms,
+                    processing_ms,
+                    outcome,
+                )
 
 
 def create_agent_card(settings: Settings | None = None) -> AgentCard:
@@ -268,7 +297,6 @@ def create_agent_card(settings: Settings | None = None) -> AgentCard:
 
 def create_ops_agent(
     settings: Settings,
-    sundae_tools: MCPStreamableHTTPTool,
     client: Any | None = None,
 ) -> Agent:
     model_client = client or create_openai_chat_client(
@@ -276,18 +304,15 @@ def create_ops_agent(
         base_url=settings.openai_base_url,
         auth_mode=settings.openai_auth_mode,
         api_key=settings.openai_api_key,
-        middleware=[return_sundae_result],
     )
     return Agent(
         client=model_client,
         name="OpsScoop",
         description="Sundae operations specialist",
         instructions=OPS_INSTRUCTIONS,
-        tools=sundae_tools,
         default_options={
-            "temperature": 0.1,
+            "temperature": 0,
             "max_tokens": 700,
-            "tool_choice": "required",
         },
     )
 
@@ -337,10 +362,10 @@ def create_app(settings: Settings | None = None) -> Any:
         header_provider=inject_trace_headers,
         http_client=sundae_http_client,
     )
-    agent = create_ops_agent(settings, sundae_tools)
+    agent = create_ops_agent(settings)
     agent_card = create_agent_card(settings)
     handler = DefaultRequestHandler(
-        agent_executor=SundaeOpsExecutor(agent, sundae_tools),
+        agent_executor=SundaeOpsExecutor(agent, sundae_tools, settings),
         task_store=InMemoryTaskStore(),
         agent_card=agent_card,
     )
