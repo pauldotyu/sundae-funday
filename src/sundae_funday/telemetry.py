@@ -39,6 +39,10 @@ def inject_trace_headers(_: dict[str, Any] | None = None) -> dict[str, str]:
 
 
 def _build_exporters() -> tuple[Any, Any, Any]:
+    # AKS application monitoring injects per-signal OTLP endpoints for its node receiver
+    # alongside a connection string; the platform-provided OTLP route wins.
+    if os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "").strip():
+        return OTLPSpanExporter(), OTLPMetricExporter(), OTLPLogExporter()
     connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "").strip()
     if connection_string:
         from azure.monitor.opentelemetry.exporter import (
