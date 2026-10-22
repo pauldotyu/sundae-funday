@@ -182,7 +182,8 @@
         background: currentColor;
         opacity: 0.7;
       }
-      #customer-name { padding: 0.8rem; }
+      #customer-name, #notes { padding: 0.8rem; }
+      #notes { margin-top: 0.7rem; }
       #confirm {
         width: 100%;
         margin-top: 0.7rem;
@@ -233,7 +234,8 @@
         </div>
         <p class="subtitle">
           Build a sundae with a conversational concierge. Shop facts and prices
-          come from MCP tools. Operational questions go to a specialist over A2A.
+          come from MCP tools. Operational questions go to a specialist over A2A,
+          and shop analytics go to an analyst that runs its code in a sandbox.
         </p>
       </header>
       <div class="layout">
@@ -270,6 +272,12 @@
               aria-label="Customer name"
               placeholder="Name for pickup"
             />
+            <input
+              id="notes"
+              aria-label="Special instructions"
+              maxlength="500"
+              placeholder="Special instructions (optional)"
+            />
             <button id="confirm" type="button" disabled>
               Pick toppings, flavors...
             </button>
@@ -295,6 +303,26 @@
               </button>
             </div>
           </section>
+          <section class="card panel">
+            <h2>Ask the shop analyst</h2>
+            <p class="panel-copy">
+              Sprinkles writes Python over order history and runs it in a sandbox.
+            </p>
+            <div class="quick-list">
+              <button class="quick" type="button"
+                data-prompt="Which flavors will run out before Saturday close, and what should I reorder?">
+                Saturday stockout forecast
+              </button>
+              <button class="quick" type="button"
+                data-prompt="What were our best-selling toppings over the last two weeks?">
+                Best-selling toppings
+              </button>
+              <button class="quick" type="button"
+                data-prompt="Summarize the special instructions customers left this week.">
+                Special instructions recap
+              </button>
+            </div>
+          </section>
         </aside>
       </div>
     </main>
@@ -303,6 +331,7 @@
       const form = document.getElementById('chat-form');
       const messageInput = document.getElementById('message');
       const nameInput = document.getElementById('customer-name');
+      const notesInput = document.getElementById('notes');
       const confirmButton = document.getElementById('confirm');
       const draftStatus = document.getElementById('draft-status');
       const sendButton = form.querySelector('button');
@@ -402,11 +431,13 @@
             {
               session_id: sessionId,
               customer_name: nameInput.value.trim() || undefined,
+              notes: notesInput.value.trim(),
             },
             'Confirmation failed.',
           );
           addMessage('Concierge', data.reply);
           setDraftState({needs_confirmation: false});
+          notesInput.value = '';
         } catch (error) {
           addMessage('Concierge', `Sorry, ${error.message}`);
           confirmButton.disabled = false;

@@ -7,6 +7,7 @@ class ServiceName(StrEnum):
     SUNDAE_MCP = "sundae-mcp"
     OPS_AGENT = "ops-agent"
     CONCIERGE = "concierge"
+    ANALYST = "analyst"
 
 
 class CatalogCategory(StrEnum):
@@ -20,4 +21,5 @@ class RouteName(StrEnum):
     QUOTE = "quote"
     OPERATIONS = "operations"
     SURPRISE = "surprise"
+    ANALYTICS = "analytics"
     GENERAL = "general"

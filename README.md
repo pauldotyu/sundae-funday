@@ -1,6 +1,6 @@
 # Sundae Funday
 
-Sundae Funday is a compact MCP and A2A demo. A browser concierge builds sundae quotes, an operations agent checks fulfillment, and a deterministic MCP service owns catalog, inventory, drafts, and submissions.
+Sundae Funday is a compact MCP and A2A demo. A browser concierge builds sundae quotes, an operations agent checks fulfillment, a shop analyst runs model-written Python in a sandbox, and a deterministic MCP service owns catalog, inventory, drafts, order history, and submissions.
 
 ## Architecture
 
@@ -10,20 +10,25 @@ flowchart TD
     Concierge -->|menu, quote, confirm| MCP[Sundae MCP]
     Concierge -->|A2A operations| Ops[Scooper]
     Ops -->|grounded tools| MCP
+    Concierge -->|A2A analytics| Analyst[Sprinkles]
+    Analyst -->|export_sales| MCP
+    Analyst -->|generated Python| Sandbox[Agent Sandbox runtime]
     Concierge -. telemetry .-> Observe[OTel or Azure Monitor]
     Ops -. telemetry .-> Observe
+    Analyst -. telemetry .-> Observe
     MCP -. telemetry .-> Observe
 ```
 
-All three services are installed from the `sundae_funday` Python package and run from one container image. `SERVICE` selects `sundae-mcp`, `ops-agent`, or `concierge` at runtime.
+All four services are installed from the `sundae_funday` Python package and run from one container image. `SERVICE` selects `sundae-mcp`, `ops-agent`, `analyst`, or `concierge` at runtime.
 
 | Service      | Port | Responsibility                                       |
 | ------------ | ---: | ---------------------------------------------------- |
 | `sundae-mcp` | 8101 | Menu, availability, quotes, and order submission     |
 | `ops-agent`  | 8202 | Tool-grounded inventory and fulfillment decisions    |
 | `concierge`  | 8301 | Browser, sessions, routing, drafts, and confirmation |
+| `analyst`    | 8401 | Sprinkles: sales analysis via sandboxed Python       |
 
-The MCP service exposes `list_menu`, `check_availability`, `quote_order`, and `submit_order`. Only the concierge confirmation action submits a draft.
+The MCP service exposes `list_menu`, `check_availability`, `quote_order`, `submit_order`, and the read-only `export_sales`. Only the concierge confirmation action submits a draft. Orders, including customer special instructions, are kept in an in-memory log seeded with 14 days of deterministic history.
 
 Routing and operations planning use Chat Completions JSON-schema output, validated
 with Pydantic. Invalid output gets one retry with validation feedback. The router
@@ -42,6 +47,37 @@ sauce, and two available toppings. When only one scoop of each flavor remains, i
 combines two flavors rather than promising two scoops of one. It fetches live
 inventory, quotes through MCP, and asks Scooper to verify fulfillment. The recipe
 may repeat until stock changes, and quoting still does not reserve inventory.
+
+## Sprinkles: an agent that runs code
+
+Sprinkles answers owner questions such as stockout forecasts and best sellers by
+writing a short Python program over `export_sales` data and running it. The code
+is model-generated, and the data includes customer-written notes, one of which is
+a planted prompt injection. Sprinkles treats notes as data, but the real control
+is where the code runs.
+
+`ANALYST_EXECUTOR` selects the boundary:
+
+- `sandbox` (default): code runs in the
+  [Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox) python runtime
+  via `POST /execute`. In Compose it holds no credentials, has a read-only root,
+  drops all capabilities, and sits on an internal-only network.
+- `inprocess`: code runs as a subprocess of the analyst, with its environment and
+  network. This is the unsafe baseline for comparison only.
+
+Show the difference without relying on model behavior:
+
+```bash
+docker compose exec analyst sundae-funday-sandbox-probe
+```
+
+Each run is traced: `analyst.request`, the model call, `mcp.client.call_tool`, and
+`sandbox.execute` with the executor, code hash, line count, and exit code.
+
+> [!note]
+> Compose isolation uses runc and shares the host kernel. Kernel-level isolation
+> comes from Agent Sandbox with a Kata runtime class on AKS. The sandbox can still
+> reach the analyst on the shared internal network.
 
 ## Local quick start
 
@@ -67,6 +103,13 @@ Useful prompts:
 - `Build me a classic sundae with vanilla and chocolate, hot fudge, and a cherry.`
 - `Got any specials tonight?`
 - `Surprise me.`
+- `Which flavors will run out before Saturday close, and what should I reorder?`
+- `What were our best-selling toppings over the last two weeks?`
+- `Summarize the special instructions customers left this week.`
+
+The first `docker compose up` builds the sandbox runtime image from the pinned
+upstream tag. `ANALYST_REASONING_EFFORT=none` keeps thinking models such as
+`gemma4` and `qwen3` from spending the whole budget on hidden reasoning.
 
 Stop the stack:
 

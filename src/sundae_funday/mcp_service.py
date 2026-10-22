@@ -78,6 +78,7 @@ def submit_order(
     session_id: str,
     idempotency_key: str,
     customer_name: str = "Guest",
+    notes: str = "",
 ) -> dict[str, Any]:
     """Submit a confirmed draft exactly once for an idempotency key."""
     return shop.submit_order(
@@ -85,7 +86,14 @@ def submit_order(
         session_id=session_id,
         idempotency_key=idempotency_key,
         customer_name=customer_name,
+        notes=notes,
     )
+
+
+@mcp.tool()
+def export_sales(days: int = 14) -> dict[str, Any]:
+    """Return read-only order history and current stock for shop analytics."""
+    return shop.export_sales(days=max(1, min(days, 30)))
 
 
 def create_app() -> Any:

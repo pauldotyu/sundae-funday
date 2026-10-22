@@ -5,6 +5,7 @@ from collections import Counter
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta
 from threading import Lock
 from typing import Any
 
@@ -19,6 +20,7 @@ from sundae_funday.catalog import (
     Size,
     normalize_token,
 )
+from sundae_funday.sales import order_record, seed_orders
 from sundae_funday.types import CatalogCategory
 
 
@@ -29,7 +31,7 @@ class Resolution:
 
 
 class InMemorySundaeShop:
-    def __init__(self) -> None:
+    def __init__(self, *, today: date | None = None) -> None:
         self._lock = Lock()
         self._inventory = {
             category: {sku: item.stock for sku, item in catalog.items()}
@@ -38,6 +40,7 @@ class InMemorySundaeShop:
         self._drafts: dict[str, dict[str, Any]] = {}
         self._submitted_drafts: set[str] = set()
         self._idempotency: dict[str, dict[str, Any]] = {}
+        self._orders = seed_orders(today or datetime.now(UTC).date())
 
     def list_menu(self) -> dict[str, Any]:
         return {
@@ -241,6 +244,7 @@ class InMemorySundaeShop:
         session_id: str,
         idempotency_key: str,
         customer_name: str = "Guest",
+        notes: str = "",
     ) -> dict[str, Any]:
         with self._lock:
             existing = self._idempotency.get(idempotency_key)
@@ -302,7 +306,45 @@ class InMemorySundaeShop:
             }
             self._submitted_drafts.add(draft_id)
             self._idempotency[idempotency_key] = deepcopy(response)
+            self._orders.append(
+                order_record(
+                    order_id=order_id,
+                    placed_at=datetime.now(UTC),
+                    size=draft["size"]["sku"],
+                    flavors=[item["sku"] for item in draft["flavors"]],
+                    sauce=(
+                        draft["sauce"]["sku"]
+                        if isinstance(draft["sauce"], dict)
+                        else None
+                    ),
+                    toppings=[item["sku"] for item in draft["toppings"]],
+                    customer_name=customer_name,
+                    notes=notes,
+                )
+            )
             return response
+
+    def export_sales(self, *, days: int = 14) -> dict[str, Any]:
+        """Return read-only order history and current stock for analysis."""
+        as_of = datetime.now(UTC)
+        start = datetime.combine(as_of.date() - timedelta(days=days), time.min, UTC)
+        since = start.isoformat(timespec="seconds")
+        with self._lock:
+            orders = [
+                deepcopy(order) for order in self._orders if order["placed_at"] >= since
+            ]
+        return {
+            "as_of": as_of.isoformat(timespec="seconds"),
+            "days": days,
+            "orders": orders,
+            "inventory": {
+                category.value: {
+                    line["sku"]: {"name": line["name"], "remaining": line["remaining"]}
+                    for line in self._stock_lines(category)
+                }
+                for category in CatalogCategory
+            },
+        }
 
     def _priced_menu_item(
         self,

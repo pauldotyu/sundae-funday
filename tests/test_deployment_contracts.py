@@ -79,6 +79,7 @@ def test_compose_application_contract() -> None:
         "sundae-mcp": 8101,
         "ops-agent": 8202,
         "concierge": 8301,
+        "analyst": 8401,
     }
     for name, port in expected.items():
         service = services[name]
@@ -93,6 +94,20 @@ def test_compose_application_contract() -> None:
         assert service["restart"] == "unless-stopped"
     assert str(services["ops-agent"]["environment"]["OPS_DEMO_WORK_SECONDS"]) == "0"
     assert str(services["ops-agent"]["environment"]["OPS_DEMO_CONCURRENCY"]) == "2"
+
+    sandbox = services["sandbox"]
+    assert list(sandbox["networks"]) == ["sandbox"]
+    assert json.loads(result.stdout)["networks"]["sandbox"]["internal"] is True
+    assert set(sandbox["environment"]) == {
+        "SANDBOX_BASE_DIR",
+        "SANDBOX_EXEC_TIMEOUT_SECONDS",
+    }
+    assert sandbox["read_only"] is True
+    assert sandbox["cap_drop"] == ["ALL"]
+    assert set(services["analyst"]["networks"]) == {"default", "sandbox"}
+    assert services["concierge"]["environment"]["ANALYST_AGENT_URL"] == (
+        "http://analyst:8401"
+    )
 
 
 @pytest.mark.parametrize(

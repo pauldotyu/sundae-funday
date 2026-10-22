@@ -29,6 +29,7 @@ dependencies = [
 [project.scripts]
 sundae-funday-serve = "sundae_funday.run_service:main"
 sundae-funday-healthcheck = "sundae_funday.healthcheck:main"
+sundae-funday-sandbox-probe = "sundae_funday.sandbox:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -75,7 +75,9 @@ def create_app(settings: Settings | None = None) -> Any:
         with tracer.start_as_current_span("concierge.confirm") as span:
             span.set_attribute("conversation.id", request.session_id)
             try:
-                return await runtime.confirm(request.session_id, request.customer_name)
+                return await runtime.confirm(
+                    request.session_id, request.customer_name, request.notes
+                )
             except RuntimeError as error:
                 raise HTTPException(status_code=400, detail=str(error)) from error
 

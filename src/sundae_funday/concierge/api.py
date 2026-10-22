@@ -15,6 +15,9 @@ from sundae_funday.settings import AppSettings, normalize_url
 class Settings(AppSettings):
     sundae_mcp_url: str = "http://sundae-mcp:8101/mcp/"
     ops_agent_url: str = "http://ops-agent:8202"
+    analyst_agent_url: str = ""
+    # Code generation, sandbox execution, and one repair can exceed agent lookups.
+    analyst_http_timeout_seconds: float = 180
     openai_base_url: str = ""
     openai_chat_model: str = ""
     openai_auth_mode: OpenAIAuthMode = OpenAIAuthMode.API_KEY
@@ -44,6 +47,7 @@ class ChatRequest(BaseModel):
 class ConfirmRequest(BaseModel):
     session_id: str = Field(min_length=1)
     customer_name: str | None = None
+    notes: str = Field(default="", max_length=500)
 
 
 class ChatResponse(BaseModel):
@@ -51,7 +55,7 @@ class ChatResponse(BaseModel):
     reply: str
     needs_confirmation: bool = False
     draft_id: str | None = None
-    source: Literal["menu", "quote", "operations", "surprise", "general"]
+    source: Literal["menu", "quote", "operations", "surprise", "analytics", "general"]
 
 
 class ConfirmResponse(BaseModel):
@@ -63,7 +67,7 @@ class ConfirmResponse(BaseModel):
 class RoutingPlan(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    route: Literal["menu", "quote", "operations", "surprise", "general"]
+    route: Literal["menu", "quote", "operations", "surprise", "analytics", "general"]
     operations_intent: Literal["specials", "availability"] = "availability"
     size: str | None = None
     flavors: list[str] = Field(default_factory=list)
@@ -71,6 +75,7 @@ class RoutingPlan(BaseModel):
     toppings: list[str] = Field(default_factory=list)
     requested_ready_in_minutes: int | None = Field(default=None, ge=1)
     operations_question: str | None = None
+    analytics_question: str | None = None
 
     @model_validator(mode="after")
     def validate_operations_intent(self) -> Self:

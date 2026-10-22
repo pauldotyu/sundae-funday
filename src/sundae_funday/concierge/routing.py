@@ -49,6 +49,20 @@ SPECIAL_PHRASES = (
     "special today",
     "specials",
 )
+ANALYTICS_PHRASES = (
+    "best seller",
+    "best-selling",
+    "best selling",
+    "forecast",
+    "order history",
+    "reorder",
+    "revenue",
+    "run out before",
+    "runs out before",
+    "sales",
+    "special instructions",
+    "trend",
+)
 ORDER_KEYWORDS = {
     "build",
     "make me",
@@ -72,6 +86,8 @@ def heuristic_plan(message: str) -> RoutingPlan:
         )
     if any(phrase in lower for phrase in SURPRISE_PHRASES):
         return RoutingPlan(route="surprise")
+    if any(phrase in lower for phrase in ANALYTICS_PHRASES):
+        return RoutingPlan(route="analytics", analytics_question=message)
     size = next((value for key, value in SIZE_HINTS.items() if key in lower), None)
     flavors = _extract_terms(lower, FLAVOR_HINTS)
     sauce = _extract_first(lower, SAUCE_HINTS)

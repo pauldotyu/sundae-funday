@@ -12,6 +12,7 @@ async def test_mcp_tool_names_and_schemas_are_stable() -> None:
         "check_availability",
         "quote_order",
         "submit_order",
+        "export_sales",
     ]
     assert tools["list_menu"].inputSchema["properties"] == {}
     assert list(tools["check_availability"].inputSchema["properties"]) == [
@@ -36,6 +37,7 @@ async def test_mcp_tool_names_and_schemas_are_stable() -> None:
         "session_id",
         "idempotency_key",
         "customer_name",
+        "notes",
     ]
     assert tools["submit_order"].inputSchema["required"] == [
         "draft_id",

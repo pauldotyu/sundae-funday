@@ -19,6 +19,7 @@ from sundae_funday.concierge.presentation import (
     build_writer_prompt,
     display_order_number,
     ops_request,
+    render_analytics_reply,
     render_fulfillment_failure,
     render_general_reply,
     render_menu_reply,
@@ -53,6 +54,9 @@ operations: stock or availability questions, with operations_intent="availabilit
 For specials or inventory-based recommendations, use operations with
 operations_intent="specials". Include the question in operations_question.
 surprise: "surprise me", "pick whatever", or "choose for me".
+analytics: owner questions about sales history, trends, best sellers, revenue,
+forecasts, reorders, or what will run out by a date. Put the question in
+analytics_question.
 general: greetings, capabilities, complaints, or explanations of preparation time.
 Use operations_intent="availability" for non-operations routes.
 Never interpret a chat message as permission to submit an order.
@@ -84,10 +88,21 @@ class ConciergeRuntime:
         *,
         mcp_call: RouterCall | None = None,
         ops_call: OpsCall | None = None,
+        analyst_call: OpsCall | None = None,
     ) -> None:
         self.settings = settings
         self._mcp_call_override = mcp_call
         self._ops_call_override = ops_call
+        self._analyst_call_override = analyst_call
+        self._analyst_client = (
+            OpsAgentClient(
+                settings.analyst_agent_url,
+                settings.analyst_http_timeout_seconds,
+                session_suffix="analyst",
+            )
+            if analyst_call is None and settings.analyst_agent_url
+            else None
+        )
         self._ops_client = (
             None
             if ops_call is not None
@@ -101,8 +116,9 @@ class ConciergeRuntime:
         self._router = self.create_router() if settings.model_is_enabled else None
 
     async def close(self) -> None:
-        if self._ops_client is not None:
-            await self._ops_client.close()
+        for client in (self._ops_client, self._analyst_client):
+            if client is not None:
+                await client.close()
 
     async def _mcp_call(self, name: str, arguments: dict[str, Any]) -> Any:
         if self._mcp_call_override is not None:
@@ -347,6 +363,27 @@ class ConciergeRuntime:
         state.order_plan = selected
         return TurnResult(plan, result, fallback, use_writer=False)
 
+    async def _handle_analytics(
+        self,
+        session_id: str,
+        message: str,
+        _: SessionState,
+        plan: RoutingPlan,
+    ) -> TurnResult:
+        question = plan.analytics_question or message
+        if self._analyst_call_override is not None:
+            response_text = await self._analyst_call_override(session_id, question)
+        elif self._analyst_client is not None:
+            response_text = await self._analyst_client.ask(session_id, question)
+        else:
+            authoritative = {"analytics_enabled": False}
+            fallback = "Shop analytics are not enabled in this deployment."
+            return TurnResult(plan, authoritative, fallback, use_writer=False)
+        result = extract_json_object(response_text)
+        return TurnResult(
+            plan, result, render_analytics_reply(result), use_writer=False
+        )
+
     async def _handle_general(
         self,
         _: str,
@@ -366,6 +403,7 @@ class ConciergeRuntime:
             "quote": self._handle_quote,
             "operations": self._handle_operations,
             "surprise": self._handle_surprise,
+            "analytics": self._handle_analytics,
             "general": self._handle_general,
         }
         turn = await handlers[plan.route](session_id, message, state, plan)
@@ -397,6 +435,7 @@ class ConciergeRuntime:
         self,
         session_id: str,
         customer_name: str | None = None,
+        notes: str = "",
     ) -> ConfirmResponse:
         state = self._store.get(session_id)
         pending = state.pending_draft
@@ -409,6 +448,7 @@ class ConciergeRuntime:
                 "session_id": session_id,
                 "idempotency_key": pending.idempotency_key,
                 "customer_name": customer_name or "Guest",
+                "notes": notes,
             },
         )
         if not isinstance(result, dict):

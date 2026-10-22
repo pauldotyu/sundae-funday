@@ -19,6 +19,7 @@ SERVICES = {
     ServiceName.CONCIERGE: Service("sundae_funday.concierge:create_app", 8301),
     ServiceName.OPS_AGENT: Service("sundae_funday.ops_agent:create_app", 8202),
     ServiceName.SUNDAE_MCP: Service("sundae_funday.mcp_service:create_app", 8101),
+    ServiceName.ANALYST: Service("sundae_funday.analyst:create_app", 8401),
 }
 
 

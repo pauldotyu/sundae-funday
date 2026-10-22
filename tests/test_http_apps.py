@@ -64,7 +64,7 @@ async def test_mcp_health_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     ) as client:
         response = await client.get("/healthz")
 
-    assert response.json() == {"status": "ok", "version": "7.6.5", "tools": 4}
+    assert response.json() == {"status": "ok", "version": "7.6.5", "tools": 5}
     get_mcp_settings.cache_clear()
 
 

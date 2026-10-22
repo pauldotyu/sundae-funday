@@ -79,8 +79,10 @@ class OpsAgentClient:
         self,
         base_url: str,
         timeout_seconds: float = 60,
+        session_suffix: str = "ops",
     ) -> None:
         self.base_url = base_url.rstrip("/")
+        self.session_suffix = session_suffix
         self.timeout_seconds = timeout_seconds
         self._http_client = httpx.AsyncClient(
             timeout=timeout_seconds,
@@ -119,8 +121,8 @@ class OpsAgentClient:
 
     async def ask(self, session_id: str, question: str) -> str:
         agent = await self._get_agent()
-        # Scooper requests are self-contained; never reference another pod's task.
-        session = agent.create_session(session_id=f"{session_id}:ops")
+        # Agent requests are self-contained; never reference another pod's task.
+        session = agent.create_session(session_id=f"{session_id}:{self.session_suffix}")
         response = await agent.run(question, session=session)
         service_session = session.service_session_id
         task_state = (
@@ -133,9 +135,9 @@ class OpsAgentClient:
             TaskState.TASK_STATE_CANCELED,
             TaskState.TASK_STATE_REJECTED,
         }:
-            raise RuntimeError("Operations agent failed to complete the request")
+            raise RuntimeError(f"{agent.name} failed to complete the request")
         if not response.text or not response.text.strip():
-            raise RuntimeError("Operations agent returned no response")
+            raise RuntimeError(f"{agent.name} returned no response")
         return response.text
 
 

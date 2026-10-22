@@ -52,6 +52,60 @@ services:
       SERVICE: ops-agent
       PORT: 8202
 
+  # Agent Sandbox python runtime, built from the pinned upstream tag. It holds
+  # no credentials and its only network is internal to the analyst.
+  sandbox:
+    image: sundae-sandbox-runtime:v1.0.7
+    build:
+      context: https://github.com/kubernetes-sigs/agent-sandbox.git#v1.0.7:examples/python-runtime-sandbox
+    environment:
+      SANDBOX_BASE_DIR: /work
+      SANDBOX_EXEC_TIMEOUT_SECONDS: "30"
+    networks:
+      - sandbox
+    read_only: true
+    tmpfs:
+      - /work
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/')
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  analyst:
+    <<: *app
+    depends_on:
+      sundae-mcp:
+        condition: service_healthy
+      sandbox:
+        condition: service_healthy
+    networks:
+      - default
+      - sandbox
+    environment:
+      <<: [*app-environment, *model-environment]
+      ANALYST_PUBLIC_BASE_URL: http://analyst:8401
+      ANALYST_EXECUTOR: ${ANALYST_EXECUTOR:-sandbox}
+      ANALYST_REASONING_EFFORT: ${ANALYST_REASONING_EFFORT:-none}
+      SANDBOX_URL: http://sandbox:8888
+      SUNDAE_MCP_URL: http://sundae-mcp:8101/mcp/
+      SERVICE: analyst
+      PORT: 8401
+
   concierge:
     <<: *app
     depends_on:
@@ -59,12 +113,15 @@ services:
         condition: service_healthy
       ops-agent:
         condition: service_healthy
+      analyst:
+        condition: service_healthy
     ports:
       - "8301:8301"
     environment:
       <<: [*app-environment, *model-environment]
       SUNDAE_MCP_URL: http://sundae-mcp:8101/mcp/
       OPS_AGENT_URL: http://ops-agent:8202
+      ANALYST_AGENT_URL: http://analyst:8401
       SERVICE: concierge
       PORT: 8301
 
@@ -123,3 +180,7 @@ services:
       - tempo
       - prometheus
     restart: unless-stopped
+
+networks:
+  sandbox:
+    internal: true

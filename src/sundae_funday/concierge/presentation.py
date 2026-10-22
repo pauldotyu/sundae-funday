@@ -128,6 +128,27 @@ def render_general_reply() -> str:
     )
 
 
+def render_analytics_reply(result: dict[str, Any]) -> str:
+    executor = result.get("executor", "unknown")
+    code = result.get("code")
+    lines = code.count("\n") + 1 if isinstance(code, str) else 0
+    stdout = str(result.get("stdout") or "").strip()
+    if result.get("exit_code") == 0 and stdout:
+        return (
+            f"{stdout}\n\nSprinkles ran a {lines}-line Python analysis "
+            f"in the {executor} executor."
+        )
+    reason = (
+        "timed out"
+        if result.get("timed_out")
+        else (f"exit code {result.get('exit_code')}")
+    )
+    return (
+        f"Sprinkles could not finish that analysis in the {executor} executor "
+        f"({reason}). Try asking a narrower question."
+    )
+
+
 def build_writer_prompt(
     context: str,
     message: str,
